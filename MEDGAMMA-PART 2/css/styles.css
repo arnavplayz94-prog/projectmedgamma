@@ -2246,6 +2246,41 @@ button {
     font-size: var(--font-size-sm);
 }
 
+/* Backend Error State */
+.backend-error {
+    background: var(--color-alert-critical-bg);
+    border: 1px solid var(--color-alert-critical);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-lg);
+    text-align: center;
+}
+
+.backend-error .error-icon {
+    font-size: 2rem;
+    display: block;
+    margin-bottom: var(--spacing-sm);
+}
+
+.backend-error strong {
+    color: var(--color-alert-critical);
+    display: block;
+    margin-bottom: var(--spacing-sm);
+}
+
+.backend-error p {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    margin: var(--spacing-xs) 0;
+}
+
+.backend-error code {
+    background: var(--color-surface-hover);
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-family: 'Courier New', monospace;
+    font-size: var(--font-size-xs);
+}
+
 /* Utility */
 .hidden {
     display: none !important;
