@@ -1,0 +1,592 @@
+/* =====================================================
+   MedGemma Login Page - Premium Design System
+   A stunning, healthcare-themed login experience
+   ===================================================== */
+
+/* CSS Custom Properties */
+:root {
+    /* Primary Colors */
+    --login-primary: #2563EB;
+    --login-primary-dark: #1D4ED8;
+    --login-primary-light: #3B82F6;
+    --login-primary-glow: rgba(37, 99, 235, 0.4);
+
+    /* Accent Colors */
+    --login-accent: #0EA5E9;
+    --login-accent-light: #38BDF8;
+
+    /* Background Gradient */
+    --login-bg-start: #0F172A;
+    --login-bg-mid: #1E293B;
+    --login-bg-end: #0F172A;
+
+    /* Surface Colors */
+    --login-surface: rgba(255, 255, 255, 0.95);
+    --login-surface-glass: rgba(255, 255, 255, 0.1);
+    --login-surface-border: rgba(255, 255, 255, 0.2);
+
+    /* Text Colors */
+    --login-text-primary: #1E293B;
+    --login-text-secondary: #64748B;
+    --login-text-muted: #94A3B8;
+    --login-text-light: rgba(255, 255, 255, 0.9);
+
+    /* Typography */
+    --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+    /* Shadows */
+    --login-shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    --login-shadow-md: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+    --login-shadow-lg: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+    --login-shadow-glow: 0 0 40px rgba(37, 99, 235, 0.3);
+
+    /* Border Radius */
+    --radius-sm: 0.5rem;
+    --radius-md: 0.75rem;
+    --radius-lg: 1rem;
+    --radius-xl: 1.5rem;
+    --radius-full: 9999px;
+
+    /* Transitions */
+    --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-normal: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 500ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Reset & Base */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    font-family: var(--font-family);
+    min-height: 100vh;
+    overflow: hidden;
+    background: linear-gradient(135deg, var(--login-bg-start) 0%, var(--login-bg-mid) 50%, var(--login-bg-end) 100%);
+    position: relative;
+}
+
+/* =====================================================
+   Animated Background Layer
+   ===================================================== */
+.animated-background {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.floating-icon {
+    position: absolute;
+    opacity: 0.15;
+    font-size: 2.5rem;
+    filter: blur(0.5px);
+    animation: floatIcon linear infinite;
+    will-change: transform;
+}
+
+.floating-icon.glow {
+    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.5));
+    opacity: 0.25;
+}
+
+@keyframes floatIcon {
+    0% {
+        transform: translateY(100vh) rotate(0deg);
+    }
+
+    100% {
+        transform: translateY(-100px) rotate(360deg);
+    }
+}
+
+/* =====================================================
+   Particle Effects Layer
+   ===================================================== */
+.particles-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.particle {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    background: rgba(59, 130, 246, 0.6);
+    border-radius: 50%;
+    animation: particleFloat linear infinite;
+    will-change: transform, opacity;
+}
+
+.particle::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    background: inherit;
+    border-radius: 50%;
+    filter: blur(4px);
+    opacity: 0.5;
+}
+
+@keyframes particleFloat {
+    0% {
+        transform: translateY(100vh) scale(0);
+        opacity: 0;
+    }
+
+    10% {
+        opacity: 1;
+    }
+
+    90% {
+        opacity: 1;
+    }
+
+    100% {
+        transform: translateY(-50px) scale(1);
+        opacity: 0;
+    }
+}
+
+/* =====================================================
+   Main Login Container
+   ===================================================== */
+.login-container {
+    position: relative;
+    z-index: 10;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+/* =====================================================
+   Login Card - Glassmorphism Design
+   ===================================================== */
+.login-card {
+    background: var(--login-surface);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--login-shadow-lg), var(--login-shadow-glow);
+    padding: 3rem 2.5rem;
+    width: 100%;
+    max-width: 420px;
+    position: relative;
+    overflow: hidden;
+    animation: cardAppear 0.8s var(--transition-slow) forwards;
+    opacity: 0;
+    transform: translateY(20px);
+}
+
+@keyframes cardAppear {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Subtle gradient overlay on card */
+.login-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--login-primary), var(--login-accent), var(--login-primary));
+    background-size: 200% 100%;
+    animation: gradientShift 3s ease infinite;
+}
+
+@keyframes gradientShift {
+
+    0%,
+    100% {
+        background-position: 0% 50%;
+    }
+
+    50% {
+        background-position: 100% 50%;
+    }
+}
+
+/* =====================================================
+   Logo Section
+   ===================================================== */
+.logo-section {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.logo-icon-wrapper {
+    position: relative;
+    display: inline-block;
+    margin-bottom: 1rem;
+}
+
+.logo-icon {
+    font-size: 3.5rem;
+    display: block;
+    animation: logoFloat 3s ease-in-out infinite;
+}
+
+.logo-glow {
+    position: absolute;
+    inset: -10px;
+    background: radial-gradient(circle, var(--login-primary-glow) 0%, transparent 70%);
+    border-radius: 50%;
+    animation: glowPulse 2s ease-in-out infinite;
+    z-index: -1;
+}
+
+@keyframes logoFloat {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-8px);
+    }
+}
+
+@keyframes glowPulse {
+
+    0%,
+    100% {
+        opacity: 0.5;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.8;
+        transform: scale(1.1);
+    }
+}
+
+.app-name {
+    font-size: 2.5rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--login-primary) 0%, var(--login-accent) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.5rem;
+}
+
+.tagline {
+    font-size: 0.95rem;
+    color: var(--login-text-secondary);
+    font-weight: 500;
+}
+
+/* =====================================================
+   Divider
+   ===================================================== */
+.divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.divider-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--login-text-muted), transparent);
+}
+
+.divider-text {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--login-text-muted);
+}
+
+/* =====================================================
+   Auth Section
+   ===================================================== */
+.auth-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+/* Auth Buttons */
+.auth-btn {
+    position: relative;
+    width: 100%;
+    padding: 1rem 1.5rem;
+    border: none;
+    border-radius: var(--radius-lg);
+    font-family: var(--font-family);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    overflow: hidden;
+    transition: transform var(--transition-fast), box-shadow var(--transition-normal);
+}
+
+.auth-btn:hover {
+    transform: translateY(-2px);
+}
+
+.auth-btn:active {
+    transform: translateY(0) scale(0.98);
+}
+
+.btn-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    position: relative;
+    z-index: 2;
+}
+
+/* Google Button */
+.google-btn {
+    background: #FFFFFF;
+    border: 2px solid #E2E8F0;
+    color: var(--login-text-primary);
+    box-shadow: var(--login-shadow-sm);
+}
+
+.google-btn:hover {
+    border-color: var(--login-primary);
+    box-shadow: var(--login-shadow-md), 0 0 20px rgba(37, 99, 235, 0.15);
+}
+
+.google-btn:focus {
+    outline: none;
+    border-color: var(--login-primary);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2);
+}
+
+.google-icon {
+    flex-shrink: 0;
+}
+
+/* Auth Helper Text */
+.auth-helper {
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--login-text-muted);
+    margin-top: -0.25rem;
+}
+
+/* Auth Separator */
+.auth-separator {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 0.5rem 0;
+}
+
+.separator-line {
+    flex: 1;
+    height: 1px;
+    background: var(--login-text-muted);
+    opacity: 0.3;
+}
+
+.separator-text {
+    font-size: 0.75rem;
+    color: var(--login-text-muted);
+    text-transform: lowercase;
+}
+
+/* Demo Button */
+.demo-btn {
+    background: linear-gradient(135deg, var(--login-primary) 0%, var(--login-primary-dark) 100%);
+    color: white;
+    border: none;
+    box-shadow: var(--login-shadow-md), 0 4px 15px rgba(37, 99, 235, 0.3);
+}
+
+.demo-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, var(--login-primary-light) 0%, var(--login-primary) 100%);
+    opacity: 0;
+    transition: opacity var(--transition-normal);
+}
+
+.demo-btn:hover::before {
+    opacity: 1;
+}
+
+.demo-btn:hover {
+    box-shadow: var(--login-shadow-lg), 0 8px 25px rgba(37, 99, 235, 0.4);
+}
+
+.demo-btn:focus {
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.3);
+}
+
+.demo-icon {
+    flex-shrink: 0;
+}
+
+/* =====================================================
+   Login Footer
+   ===================================================== */
+.login-footer {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    text-align: center;
+}
+
+.footer-text {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--login-text-secondary);
+}
+
+.shield-icon {
+    font-size: 1rem;
+}
+
+/* =====================================================
+   Demo Notice
+   ===================================================== */
+.demo-notice {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+    padding: 0.75rem 1.25rem;
+    background: var(--login-surface-glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--login-surface-border);
+    border-radius: var(--radius-full);
+    animation: noticeAppear 1s 0.5s forwards;
+    opacity: 0;
+}
+
+@keyframes noticeAppear {
+    to {
+        opacity: 1;
+    }
+}
+
+.notice-icon {
+    font-size: 0.9rem;
+}
+
+.notice-text {
+    font-size: 0.8rem;
+    color: var(--login-text-light);
+}
+
+/* =====================================================
+   Loading State
+   ===================================================== */
+.auth-btn.loading {
+    pointer-events: none;
+    opacity: 0.8;
+}
+
+.auth-btn.loading .btn-content {
+    opacity: 0;
+}
+
+.auth-btn.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 24px;
+    height: 24px;
+    margin: -12px 0 0 -12px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.google-btn.loading::after {
+    border-color: rgba(37, 99, 235, 0.2);
+    border-top-color: var(--login-primary);
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* =====================================================
+   Responsive Design
+   ===================================================== */
+@media (max-width: 480px) {
+    .login-container {
+        padding: 1rem;
+    }
+
+    .login-card {
+        padding: 2rem 1.5rem;
+    }
+
+    .app-name {
+        font-size: 2rem;
+    }
+
+    .tagline {
+        font-size: 0.85rem;
+    }
+
+    .auth-btn {
+        padding: 0.875rem 1.25rem;
+    }
+
+    .demo-notice {
+        flex-direction: column;
+        text-align: center;
+        border-radius: var(--radius-lg);
+    }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+
+    .floating-icon,
+    .particle {
+        animation: none;
+        opacity: 0.1;
+    }
+}

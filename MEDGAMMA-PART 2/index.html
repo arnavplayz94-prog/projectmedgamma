@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="MedGemma Doctor Dashboard - AI-assisted clinical support tool for healthcare professionals">
+    <title>MedGemma Dashboard | Clinical Support</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+    <!-- Disclaimer Banner -->
+    <div class="disclaimer-banner" role="alert">
+        <span class="disclaimer-icon">⚠</span>
+        <span class="disclaimer-text">
+            <strong>Clinical Support Tool Only:</strong> This system does not provide diagnoses or treatment
+            recommendations.
+            All AI-generated content requires physician review and approval.
+        </span>
+    </div>
+
+    <!-- Main App Container -->
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
+                    <span class="hamburger-icon"></span>
+                </button>
+                <div class="app-logo">
+                    <span class="logo-icon">🏥</span>
+                    <h1 class="app-title">MedGemma</h1>
+                </div>
+            </div>
+
+            <!-- Global Search (Requirement 7) -->
+            <div class="global-search" id="globalSearch">
+                <div class="search-input-wrapper">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" class="global-search-input" id="globalSearchInput"
+                        placeholder="Search patients, notes, alerts..." aria-label="Global search">
+                    <kbd class="search-shortcut">Ctrl+K</kbd>
+                </div>
+                <div class="search-results hidden" id="searchResults">
+                    <div class="search-section" data-section="patients">
+                        <h4 class="search-section-title">Patients</h4>
+                        <ul class="search-results-list" id="searchPatients"></ul>
+                    </div>
+                    <div class="search-section" data-section="notes">
+                        <h4 class="search-section-title">Notes</h4>
+                        <ul class="search-results-list" id="searchNotes"></ul>
+                    </div>
+                    <div class="search-section" data-section="alerts">
+                        <h4 class="search-section-title">Alerts</h4>
+                        <ul class="search-results-list" id="searchAlerts"></ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="header-right">
+                <!-- Security Indicators (Requirement 11) -->
+                <div class="security-indicators">
+                    <span class="security-badge" title="Connection Encrypted">
+                        <span class="lock-icon">🔒</span>
+                        <span class="security-text">Secure</span>
+                    </span>
+                    <span class="hipaa-badge" title="HIPAA Compliant">HIPAA</span>
+                </div>
+
+                <div class="system-status">
+                    <span class="status-indicator status-online"></span>
+                    <span class="status-text">Online</span>
+                </div>
+
+                <!-- Messages Toggle (Requirement 9) -->
+                <button class="messages-toggle" id="messagesToggle" aria-label="Open messages">
+                    <span class="icon">💬</span>
+                    <span class="unread-badge" id="unreadBadge">3</span>
+                </button>
+
+                <div class="user-profile">
+                    <div class="user-avatar">DR</div>
+                    <span class="user-name">Dr. User</span>
+                </div>
+
+                <!-- Settings Button (Requirement 10) -->
+                <button class="settings-btn" id="settingsBtn" aria-label="Settings">
+                    <span class="settings-icon">⚙</span>
+                </button>
+
+                <a href="login.html" class="login-signup-btn" aria-label="Login or Sign Up">
+                    <span class="login-icon">🔐</span>
+                </a>
+            </div>
+        </header>
+
+        <!-- Main Layout -->
+        <div class="main-layout">
+            <!-- Sidebar -->
+            <aside class="sidebar" id="sidebar">
+                <div class="sidebar-section">
+                    <h2 class="sidebar-title">Patients</h2>
+                    <div class="patient-search">
+                        <input type="text" class="search-input" id="patientSearchInput" placeholder="Search patients..."
+                            aria-label="Search patients">
+                    </div>
+
+                    <!-- Advanced Filters (Requirement 7) -->
+                    <div class="advanced-filters">
+                        <div class="filter-group">
+                            <label class="filter-label">Severity</label>
+                            <div class="filter-chips">
+                                <button class="filter-chip active" data-filter="all">All</button>
+                                <button class="filter-chip" data-filter="critical">Critical</button>
+                                <button class="filter-chip" data-filter="warning">Warning</button>
+                                <button class="filter-chip" data-filter="stable">Stable</button>
+                            </div>
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Condition</label>
+                            <select class="filter-select" id="conditionFilter">
+                                <option value="all">All Conditions</option>
+                                <option value="cardiac">Cardiac</option>
+                                <option value="respiratory">Respiratory</option>
+                                <option value="neuro">Neurological</option>
+                                <option value="general">General</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Patient List (Requirements 5, 6) -->
+                    <ul class="patient-list" id="patientList">
+                        <!-- Patient cards rendered by JS -->
+                    </ul>
+
+                    <button class="add-patient-btn" id="addPatientBtn">
+                        <span class="add-icon">+</span>
+                        Add Patient
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="main-content" id="mainContent">
+                <!-- Content Header -->
+                <div class="content-header">
+                    <div class="patient-overview">
+                        <h2 class="section-title">Patient Overview</h2>
+                        <span class="current-patient-badge hidden" id="currentPatientBadge">--</span>
+                    </div>
+                    <div class="time-range" id="timeRangeSelector">
+                        <button class="time-btn" data-range="24h">24h</button>
+                        <button class="time-btn active" data-range="7d">7d</button>
+                        <button class="time-btn" data-range="30d">30d</button>
+                    </div>
+                </div>
+
+                <!-- Dashboard Grid -->
+                <div class="dashboard-grid" id="dashboardGrid">
+                    <!-- Vitals Card (Requirement 3) -->
+                    <section class="card vitals-card" data-component="vitals">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <span class="card-icon">❤️</span>
+                                Vital Signs
+                            </h3>
+                            <div class="card-actions">
+                                <button class="card-action-btn" id="exportVitals">Export</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="vitals-grid" id="vitalsGrid">
+                                <!-- Heart Rate -->
+                                <div class="vital-item" data-vital="hr">
+                                    <div class="vital-header">
+                                        <span class="vital-label">❤️ Heart Rate</span>
+                                        <span class="vital-trend" id="hrTrend">--</span>
+                                    </div>
+                                    <div class="vital-value-row">
+                                        <span class="vital-current" id="hrValue">-- BPM</span>
+                                        <span class="vital-change" id="hrChange">--</span>
+                                    </div>
+                                    <div class="vital-baseline">
+                                        <span class="baseline-label">Baseline:</span>
+                                        <span class="baseline-value" id="hrBaseline">-- BPM</span>
+                                    </div>
+                                    <div class="vital-sparkline-container" id="hrSparkline" title="Click to expand">
+                                    </div>
+                                    <div class="vital-range">Normal: 60-100 BPM</div>
+                                </div>
+
+                                <!-- Blood Pressure -->
+                                <div class="vital-item" data-vital="bp">
+                                    <div class="vital-header">
+                                        <span class="vital-label">🩸 Blood Pressure</span>
+                                        <span class="vital-trend" id="bpTrend">--</span>
+                                    </div>
+                                    <div class="vital-value-row">
+                                        <span class="vital-current" id="bpValue">--/-- mmHg</span>
+                                        <span class="vital-change" id="bpChange">--</span>
+                                    </div>
+                                    <div class="vital-baseline">
+                                        <span class="baseline-label">Baseline:</span>
+                                        <span class="baseline-value" id="bpBaseline">--/-- mmHg</span>
+                                    </div>
+                                    <div class="vital-sparkline-container" id="bpSparkline" title="Click to expand">
+                                    </div>
+                                    <div class="vital-range">Normal: 120/80 mmHg</div>
+                                </div>
+
+                                <!-- SpO2 -->
+                                <div class="vital-item" data-vital="spo2">
+                                    <div class="vital-header">
+                                        <span class="vital-label">🫁 SpO₂</span>
+                                        <span class="vital-trend" id="spo2Trend">--</span>
+                                    </div>
+                                    <div class="vital-value-row">
+                                        <span class="vital-current" id="spo2Value">--%</span>
+                                        <span class="vital-change" id="spo2Change">--</span>
+                                    </div>
+                                    <div class="vital-baseline">
+                                        <span class="baseline-label">Baseline:</span>
+                                        <span class="baseline-value" id="spo2Baseline">--%</span>
+                                    </div>
+                                    <div class="vital-sparkline-container" id="spo2Sparkline" title="Click to expand">
+                                    </div>
+                                    <div class="vital-range">Normal: 95-100%</div>
+                                </div>
+
+                                <!-- Temperature -->
+                                <div class="vital-item" data-vital="temp">
+                                    <div class="vital-header">
+                                        <span class="vital-label">🌡️ Temperature</span>
+                                        <span class="vital-trend" id="tempTrend">--</span>
+                                    </div>
+                                    <div class="vital-value-row">
+                                        <span class="vital-current" id="tempValue">--°F</span>
+                                        <span class="vital-change" id="tempChange">--</span>
+                                    </div>
+                                    <div class="vital-baseline">
+                                        <span class="baseline-label">Baseline:</span>
+                                        <span class="baseline-value" id="tempBaseline">--°F</span>
+                                    </div>
+                                    <div class="vital-sparkline-container" id="tempSparkline" title="Click to expand">
+                                    </div>
+                                    <div class="vital-range">Normal: 97-99°F</div>
+                                </div>
+
+                                <!-- Respiration -->
+                                <div class="vital-item" data-vital="resp">
+                                    <div class="vital-header">
+                                        <span class="vital-label">💨 Respiration</span>
+                                        <span class="vital-trend" id="respTrend">--</span>
+                                    </div>
+                                    <div class="vital-value-row">
+                                        <span class="vital-current" id="respValue">-- /min</span>
+                                        <span class="vital-change" id="respChange">--</span>
+                                    </div>
+                                    <div class="vital-baseline">
+                                        <span class="baseline-label">Baseline:</span>
+                                        <span class="baseline-value" id="respBaseline">-- /min</span>
+                                    </div>
+                                    <div class="vital-sparkline-container" id="respSparkline" title="Click to expand">
+                                    </div>
+                                    <div class="vital-range">Normal: 12-20 /min</div>
+                                </div>
+                            </div>
+
+                            <!-- Empty State -->
+                            <div class="vitals-empty-state" id="vitalsEmptyState">
+                                <p class="empty-text">Select a patient to view vital signs</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Alerts Card (Requirement 2) -->
+                    <section class="card alerts-card" data-component="alerts">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <span class="card-icon">🔔</span>
+                                Active Alerts
+                            </h3>
+                            <div class="alert-filters">
+                                <button class="alert-filter active" data-level="all">All</button>
+                                <button class="alert-filter" data-level="critical">Critical</button>
+                                <button class="alert-filter" data-level="warning">Warning</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <ul class="alert-list" id="alertList">
+                                <!-- Alerts rendered by JS -->
+                            </ul>
+                            <div class="alerts-empty-state" id="alertsEmptyState">
+                                <span class="empty-icon">✓</span>
+                                <p class="empty-text">No active alerts</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- AI Notes Card (Requirement 4) -->
+                    <section class="card ai-notes-card" data-component="notes">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <span class="card-icon">✨</span>
+                                AI-Assisted Notes
+                            </h3>
+                            <span class="ai-badge">AI Draft</span>
+                        </div>
+                        <div class="card-body">
+                            <!-- Note Type Tabs -->
+                            <div class="note-type-tabs" id="noteTypeTabs">
+                                <button class="note-tab active" data-type="soap">SOAP</button>
+                                <button class="note-tab" data-type="hpi">HPI</button>
+                                <button class="note-tab" data-type="assessment">Assessment</button>
+                                <button class="note-tab" data-type="summary">Patient Summary</button>
+                                <button class="note-tab" data-type="impression">Clinical Impression</button>
+                            </div>
+
+                            <!-- Generate Button -->
+                            <div class="generate-notes-container" id="generateNotesContainer">
+                                <div class="ai-notice">
+                                    <span class="notice-icon">ℹ</span>
+                                    <span class="notice-text">Select a patient and click to generate AI-assisted
+                                        clinical notes.</span>
+                                </div>
+                                <button class="action-btn primary generate-notes-btn" id="generateNotesBtn">
+                                    <span class="btn-icon">✨</span>
+                                    Generate Draft Notes
+                                </button>
+                            </div>
+
+                            <!-- AI Generated Content -->
+                            <div class="ai-note-content hidden" id="aiNoteContent">
+                                <div class="note-section" data-section="subjective">
+                                    <h4 class="note-heading">Subjective</h4>
+                                    <p class="note-text editable-text" contenteditable="false" id="noteSubjective">--
+                                    </p>
+                                </div>
+                                <div class="note-section" data-section="objective">
+                                    <h4 class="note-heading">Objective</h4>
+                                    <p class="note-text editable-text" contenteditable="false" id="noteObjective">--</p>
+                                </div>
+                                <div class="note-section" data-section="assessment">
+                                    <h4 class="note-heading">Assessment</h4>
+                                    <p class="note-text editable-text" contenteditable="false" id="noteAssessment">--
+                                    </p>
+                                </div>
+                                <div class="note-section" data-section="plan">
+                                    <h4 class="note-heading">Plan</h4>
+                                    <p class="note-text editable-text" contenteditable="false" id="notePlan">--</p>
+                                </div>
+                                <!-- HPI Content -->
+                                <div class="note-section hidden" data-section="hpi">
+                                    <h4 class="note-heading">History of Present Illness</h4>
+                                    <p class="note-text" id="noteHPI">--</p>
+                                </div>
+                                <!-- Patient Summary Content -->
+                                <div class="note-section hidden" data-section="summary">
+                                    <h4 class="note-heading">Patient Summary</h4>
+                                    <p class="note-text" id="notePatientSummary">--</p>
+                                </div>
+                                <!-- Clinical Impression Content -->
+                                <div class="note-section hidden" data-section="impression">
+                                    <h4 class="note-heading">Preliminary Clinical Impression</h4>
+                                    <div class="clinical-impression-content">
+                                        <span class="ai-label">AI-Suggested (Review Required)</span>
+                                        <p class="note-text" id="noteClinicalImpression">--</p>
+                                        <div class="ai-disclaimer">This is an AI-generated suggestion and must be
+                                            reviewed, edited, or rejected by a licensed clinician.</div>
+                                    </div>
+                                </div>
+
+                                <!-- AI Action Bar -->
+                                <div class="ai-action-bar">
+                                    <button class="ai-action accept" id="acceptNoteBtn">
+                                        <span class="icon">✓</span> Accept
+                                    </button>
+                                    <button class="ai-action edit" id="editNoteBtn">
+                                        <span class="icon">✏</span> Edit
+                                    </button>
+                                    <button class="ai-action reject" id="rejectNoteBtn">
+                                        <span class="icon">✕</span> Reject
+                                    </button>
+                                    <button class="ai-action regenerate" id="regenerateNoteBtn">
+                                        <span class="icon">↻</span> Regenerate
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Notes Timeline Card (Requirement 8) -->
+                    <section class="card notes-timeline-card" data-component="timeline">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <span class="card-icon">📝</span>
+                                Notes Timeline
+                            </h3>
+                            <div class="notes-search">
+                                <input type="text" placeholder="Search notes..." class="notes-search-input"
+                                    id="notesSearchInput">
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <!-- Quick Add Note -->
+                            <div class="quick-note-add">
+                                <textarea class="quick-note-input" id="quickNoteInput"
+                                    placeholder="Add a quick note..."></textarea>
+                                <button class="quick-note-submit" id="quickNoteSubmit">Add Note</button>
+                            </div>
+
+                            <!-- Timeline -->
+                            <ul class="notes-timeline" id="notesTimeline">
+                                <!-- Notes rendered by JS -->
+                            </ul>
+
+                            <div class="timeline-empty-state" id="timelineEmptyState">
+                                <p class="empty-text">No notes yet. Add your first note above.</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Quick Stats Card -->
+                    <section class="card stats-card" data-component="stats">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <span class="card-icon">📈</span>
+                                Today's Overview
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-value" id="statActivePatients">0</span>
+                                    <span class="stat-label">Active Patients</span>
+                                </div>
+                                <div class="stat-item stat-alert">
+                                    <span class="stat-value" id="statPendingAlerts">0</span>
+                                    <span class="stat-label">Pending Alerts</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value" id="statDraftNotes">0</span>
+                                    <span class="stat-label">Draft Notes</span>
+                                </div>
+                                <div class="stat-item stat-success">
+                                    <span class="stat-value" id="statReviewedToday">0</span>
+                                    <span class="stat-label">Reviewed Today</span>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Secure Messages Panel (Requirement 9) -->
+    <aside class="messages-panel hidden" id="messagesPanel">
+        <div class="panel-header">
+            <h3 class="panel-title">Secure Messages</h3>
+            <button class="panel-close" id="messagesPanelClose" aria-label="Close messages">✕</button>
+        </div>
+        <div class="panel-body">
+            <!-- Message Threads -->
+            <ul class="message-threads" id="messageThreads">
+                <li class="thread-item unread" data-thread="1">
+                    <div class="thread-avatar">NS</div>
+                    <div class="thread-content">
+                        <span class="thread-name">Nurse Stevens</span>
+                        <span class="thread-preview">Patient PT-1234 needs review...</span>
+                        <span class="thread-time">5m ago</span>
+                    </div>
+                </li>
+                <li class="thread-item unread" data-thread="2">
+                    <div class="thread-avatar">DR</div>
+                    <div class="thread-content">
+                        <span class="thread-name">Dr. Roberts</span>
+                        <span class="thread-preview">Can you consult on case...</span>
+                        <span class="thread-time">12m ago</span>
+                    </div>
+                </li>
+                <li class="thread-item" data-thread="3">
+                    <div class="thread-avatar">LT</div>
+                    <div class="thread-content">
+                        <span class="thread-name">Lab Tech</span>
+                        <span class="thread-preview">Results ready for PT-5678</span>
+                        <span class="thread-time">1h ago</span>
+                    </div>
+                </li>
+            </ul>
+
+            <!-- Quick Compose -->
+            <div class="quick-compose">
+                <input type="text" placeholder="Type a message..." class="compose-input" id="composeInput">
+                <button class="compose-send" id="composeSend" aria-label="Send message">
+                    <span>→</span>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Add Patient Modal -->
+    <div class="modal-overlay hidden" id="addPatientModal">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h2 class="modal-title">Add Patient</h2>
+                <button class="modal-close" aria-label="Close modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <form id="addPatientForm">
+                    <div class="form-group">
+                        <label for="patientName" class="form-label">Patient Name</label>
+                        <input type="text" id="patientName" class="form-input" placeholder="e.g., John Smith" required>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="patientAge" class="form-label">Age</label>
+                            <input type="number" id="patientAge" class="form-input" placeholder="e.g., 45">
+                        </div>
+                        <div class="form-group">
+                            <label for="patientGender" class="form-label">Gender</label>
+                            <select id="patientGender" class="form-input">
+                                <option value="M">Male</option>
+                                <option value="F">Female</option>
+                                <option value="O">Other</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="patientRisk" class="form-label">Risk Level</label>
+                        <select id="patientRisk" class="form-input">
+                            <option value="low">Stable (Low Risk)</option>
+                            <option value="info">Observation</option>
+                            <option value="medium">Warning (Medium Risk)</option>
+                            <option value="high">Critical (High Risk)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="patientCondition" class="form-label">Primary Condition</label>
+                        <select id="patientCondition" class="form-input">
+                            <option value="general">General</option>
+                            <option value="cardiac">Cardiac</option>
+                            <option value="respiratory">Respiratory</option>
+                            <option value="neuro">Neurological</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="patientNotes" class="form-label">Initial Notes (optional)</label>
+                        <textarea id="patientNotes" class="form-textarea" rows="3"
+                            placeholder="Brief clinical notes or presenting symptoms..."></textarea>
+                    </div>
+                    <div class="demo-notice">
+                        <span class="notice-icon">ℹ</span>
+                        <span class="notice-text">Demo mode: Patient data is stored locally.</span>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="modal-btn secondary" id="cancelPatientBtn">Cancel</button>
+                <button type="submit" form="addPatientForm" class="modal-btn primary" id="savePatientBtn">Save
+                    Patient</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal (Requirement 10) -->
+    <div class="modal-overlay hidden" id="settingsModal">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-header">
+                <h2 class="modal-title">Dashboard Settings</h2>
+                <button class="modal-close" id="settingsClose" aria-label="Close">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <h3 class="settings-heading">Specialty Preset</h3>
+                    <p class="settings-hint">Choose a layout optimized for your specialty</p>
+                    <div class="specialty-presets" id="specialtyPresets">
+                        <button class="preset-btn active" data-preset="general">
+                            <span class="preset-icon">🏥</span>
+                            <span class="preset-name">General</span>
+                        </button>
+                        <button class="preset-btn" data-preset="cardiology">
+                            <span class="preset-icon">❤️</span>
+                            <span class="preset-name">Cardiology</span>
+                        </button>
+                        <button class="preset-btn" data-preset="icu">
+                            <span class="preset-icon">🏨</span>
+                            <span class="preset-name">ICU</span>
+                        </button>
+                        <button class="preset-btn" data-preset="emergency">
+                            <span class="preset-icon">🚑</span>
+                            <span class="preset-name">Emergency</span>
+                        </button>
+                        <button class="preset-btn" data-preset="neuro">
+                            <span class="preset-icon">🧠</span>
+                            <span class="preset-name">Neurology</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3 class="settings-heading">Alert Preferences</h3>
+                    <div class="settings-options">
+                        <label class="settings-option">
+                            <input type="checkbox" id="alertSoundEnabled" checked>
+                            <span>Enable alert sounds</span>
+                        </label>
+                        <label class="settings-option">
+                            <input type="checkbox" id="alertAutoCollapse" checked>
+                            <span>Auto-collapse info alerts after 30s</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3 class="settings-heading">Display</h3>
+                    <div class="settings-options">
+                        <label class="settings-option">
+                            <input type="checkbox" id="compactMode">
+                            <span>Compact mode (smaller cards)</span>
+                        </label>
+                        <label class="settings-option">
+                            <input type="checkbox" id="showBaselines" checked>
+                            <span>Show baseline comparisons</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="modal-btn primary" id="saveSettingsBtn">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Patient Detail View -->
+    <div class="patient-detail-view hidden" id="patientDetailView">
+        <div class="detail-header">
+            <button class="back-btn" id="backToListBtn">
+                <span class="back-icon">←</span>
+                Back to Dashboard
+            </button>
+            <div class="detail-patient-info">
+                <h2 class="detail-patient-name" id="detailPatientName">Patient Name</h2>
+                <span class="detail-patient-meta" id="detailPatientMeta">Age: -- | Status: Active</span>
+            </div>
+            <div class="detail-patient-risk" id="detailPatientRisk">
+                <span class="risk-badge">--</span>
+            </div>
+        </div>
+
+        <div class="detail-content">
+            <!-- Detailed patient view content -->
+            <div class="detail-grid">
+                <section class="card detail-vitals-card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <span class="card-icon">📊</span>
+                            Detailed Vitals
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container" id="detailChartContainer">
+                            <!-- Full charts rendered here -->
+                        </div>
+                    </div>
+                </section>
+
+                <section class="card detail-history-card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <span class="card-icon">📋</span>
+                            Medical History
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <ul class="history-list" id="historyList">
+                            <!-- History items -->
+                        </ul>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/vital-graphs.js"></script>
+    <script src="js/app.js"></script>
+</body>
+
+</html>
