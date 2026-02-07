@@ -1,11 +1,12 @@
 """
-MedGamma Backend Server
-=======================
-Minimal Flask wrapper for the bby.ipynb notebook.
-Provides API endpoints for clinical data processing and AI-generated notes.
+MedGamma Backend Server with Gemini AI Integration
+===================================================
+Flask wrapper for the bby.ipynb notebook with Google Gemini API for AI-generated clinical notes.
 
-This wrapper does NOT modify the notebook's logic - it only calls existing functions
-and returns structured context for AI to generate clinical documentation.
+This backend:
+1. Processes wearable data to create structured clinical context
+2. Uses Gemini API to generate SOAP notes, HPI, and chatbot responses
+3. Enforces clinical safety guardrails (no diagnoses, probabilistic language)
 """
 
 import os
@@ -15,9 +16,58 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Gemini API
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    print("WARNING: google-generativeai not installed. Run: pip install google-generativeai")
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend communication
+
+# ============================================================================
+# GEMINI CONFIGURATION
+# ============================================================================
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+# Initialize Gemini client
+gemini_model = None
+if GEMINI_AVAILABLE and GEMINI_API_KEY:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
+        print("[OK] Gemini API initialized successfully")
+    except Exception as e:
+        print(f"[ERROR] Failed to initialize Gemini: {e}")
+        gemini_model = None
+elif not GEMINI_API_KEY:
+    print("[WARNING] GEMINI_API_KEY not set. Set it with: $env:GEMINI_API_KEY = 'your-key'")
+
+# Clinical safety system prompt
+CLINICAL_SYSTEM_PROMPT = """You are a clinical AI assistant for the MedGamma wearable health monitoring system.
+
+MANDATORY SAFETY RULES - YOU MUST FOLLOW THESE:
+1. NEVER provide a definitive diagnosis
+2. NEVER prescribe medications or specific treatments
+3. ALWAYS use probabilistic language: "may suggest", "could indicate", "appears consistent with"
+4. ALWAYS frame findings as "considerations" not conclusions
+5. ALWAYS remind that clinical correlation is required
+6. NEVER claim certainty about any medical condition
+
+You analyze structured wearable sensor data (heart rate, EDA, temperature, SpO2, etc.) and provide:
+- Objective summaries of the data
+- Possible considerations based on patterns
+- Areas that may warrant clinical attention
+
+You are NOT a replacement for clinical judgment. All outputs require review by a licensed clinician."""
 
 # ============================================================================
 # STRUCTURED CONTEXT - Output from notebook processing
@@ -81,17 +131,170 @@ def get_structured_context(entity_id: str) -> Dict[str, Any]:
     }
 
 
-def generate_ai_clinical_notes(context: Dict[str, Any]) -> Dict[str, Any]:
+# Sample subjects
+MOCK_SUBJECTS = [
+    {"id": "S01", "name": "John Smith", "age": 45, "condition": "Post-cardiac surgery"},
+    {"id": "S02", "name": "Maria Garcia", "age": 62, "condition": "Hypertension monitoring"},
+    {"id": "S03", "name": "James Wilson", "age": 38, "condition": "Stress assessment"},
+    {"id": "S04", "name": "Emily Chen", "age": 55, "condition": "Cardiac rehabilitation"},
+    {"id": "S05", "name": "Michael Brown", "age": 70, "condition": "Heart failure monitoring"},
+    {"id": "PT-1234", "name": "John Smith", "age": 62, "condition": "Cardiac monitoring"},
+    {"id": "PT-5678", "name": "Maria Garcia", "age": 45, "condition": "Respiratory observation"},
+    {"id": "PT-9012", "name": "James Johnson", "age": 55, "condition": "Post-op recovery"},
+    {"id": "PT-3456", "name": "Sarah Williams", "age": 38, "condition": "Neuro observation"},
+]
+
+
+# ============================================================================
+# GEMINI-POWERED GENERATION
+# ============================================================================
+
+def generate_ai_clinical_notes_gemini(context: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Generate AI clinical documentation from structured context.
-    All outputs use probabilistic, non-assertive language.
+    Generate AI clinical documentation using Gemini API.
+    """
+    entity_id = context.get("entity_id", "Unknown")
+    vitals = context.get("current_vitals", {})
+    trends = context.get("trends", {})
+    deviations = context.get("deviations", [])
+    time_context = context.get("time_context", {})
+    
+    # Find patient info
+    patient_info = next((p for p in MOCK_SUBJECTS if p["id"] == entity_id), None)
+    patient_name = patient_info.get("name", entity_id) if patient_info else entity_id
+    patient_condition = patient_info.get("condition", "Unknown") if patient_info else "Unknown"
+    patient_age = patient_info.get("age", "Unknown") if patient_info else "Unknown"
+    
+    # Build the prompt for Gemini
+    prompt = f"""Generate clinical documentation for the following patient based on wearable monitoring data.
+
+PATIENT INFORMATION:
+- ID: {entity_id}
+- Name: {patient_name}
+- Age: {patient_age}
+- Primary Condition: {patient_condition}
+
+CURRENT VITAL SIGNS (from wearable sensors):
+- Heart Rate: {vitals.get('hr_mean', 0):.1f} bpm (Trend: {trends.get('hr_trend', 'stable')})
+- Heart Rate Variability: {vitals.get('hr_variability', 0):.1f} ms
+- SpO2: {vitals.get('spo2', 0):.1f}%
+- Temperature: {vitals.get('temp', 0):.2f}°C
+- Respiratory Rate: {vitals.get('resp_rate', 0):.1f}/min
+- Blood Pressure: {vitals.get('bp_systolic', 0):.0f}/{vitals.get('bp_diastolic', 0):.0f} mmHg
+- Electrodermal Activity (EDA): {vitals.get('eda_mean', 0):.3f} µS (Trend: {trends.get('eda_trend', 'stable')})
+
+MONITORING PERIOD:
+- From: {time_context.get('data_start', 'N/A')[:10]}
+- To: {time_context.get('data_end', 'N/A')[:10]}
+- Data Points: {time_context.get('measurement_count', 0)}
+
+DETECTED DEVIATIONS FROM BASELINE:
+{json.dumps(deviations, indent=2) if deviations else "None detected"}
+
+Generate the following sections. Remember to use probabilistic language and NEVER diagnose:
+
+1. SOAP NOTE:
+   - Subjective: What the monitoring data suggests about the patient's state
+   - Objective: Factual vital sign readings and trends
+   - Assessment: Possible considerations based on the data (NOT diagnoses)
+   - Plan: Suggested monitoring or follow-up actions
+
+2. HPI (History of Present Illness): Brief narrative of the monitoring period
+
+3. PATIENT SUMMARY: Concise overview suitable for handoff
+
+4. CLINICAL IMPRESSION: Possible considerations (list format, 3-5 items)
+
+Format your response as JSON with keys: subjective, objective, assessment, plan, hpi, patient_summary, clinical_impression (as a list)"""
+
+    if gemini_model:
+        try:
+            # Call Gemini API
+            response = gemini_model.generate_content(
+                [CLINICAL_SYSTEM_PROMPT, prompt],
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,  # Lower temperature for more consistent clinical output
+                    max_output_tokens=2000,
+                )
+            )
+            
+            # Parse response
+            response_text = response.text
+            
+            # Try to extract JSON from response
+            try:
+                # Handle markdown code blocks
+                if "```json" in response_text:
+                    json_start = response_text.find("```json") + 7
+                    json_end = response_text.find("```", json_start)
+                    response_text = response_text[json_start:json_end].strip()
+                elif "```" in response_text:
+                    json_start = response_text.find("```") + 3
+                    json_end = response_text.find("```", json_start)
+                    response_text = response_text[json_start:json_end].strip()
+                
+                parsed = json.loads(response_text)
+                
+                return {
+                    "soap_note": {
+                        "subjective": parsed.get("subjective") or parsed.get("soap", {}).get("subjective", "Unable to generate"),
+                        "objective": parsed.get("objective") or parsed.get("soap", {}).get("objective", "Unable to generate"),
+                        "assessment": parsed.get("assessment") or parsed.get("soap", {}).get("assessment", "Unable to generate"),
+                        "plan": parsed.get("plan") or parsed.get("soap", {}).get("plan", "Unable to generate")
+                    },
+                    "hpi": parsed.get("hpi", "Unable to generate"),
+                    "assessment_summary": parsed.get("assessment_summary") or parsed.get("assessment", "Unable to generate"),
+                    "patient_summary": parsed.get("patient_summary", "Unable to generate"),
+                    "clinical_impression": {
+                        "differentials": parsed.get("clinical_impression", []),
+                        "narrative": "PRELIMINARY CLINICAL IMPRESSION (AI-Generated):\n\n" + 
+                                   "\n".join([f"• {item}" for item in parsed.get("clinical_impression", [])])
+                    },
+                    "disclaimer": "This is an AI-generated suggestion and must be reviewed, edited, or rejected by a licensed clinician.",
+                    "label": "AI-Suggested (Review Required)",
+                    "generated_at": datetime.now().isoformat(),
+                    "model": "gemini-2.5-flash-lite"
+                }
+            except json.JSONDecodeError:
+                # If JSON parsing fails, use the raw text
+                return {
+                    "soap_note": {
+                        "subjective": response_text[:500] if len(response_text) > 500 else response_text,
+                        "objective": "See subjective section",
+                        "assessment": "See subjective section",
+                        "plan": "See subjective section"
+                    },
+                    "hpi": response_text,
+                    "assessment_summary": response_text,
+                    "patient_summary": response_text,
+                    "clinical_impression": {
+                        "differentials": ["Raw AI response - structured parsing failed"],
+                        "narrative": response_text
+                    },
+                    "disclaimer": "This is an AI-generated suggestion and must be reviewed, edited, or rejected by a licensed clinician.",
+                    "label": "AI-Suggested (Review Required)",
+                    "generated_at": datetime.now().isoformat(),
+                    "model": "gemini-2.5-flash-lite"
+                }
+                
+        except Exception as e:
+            print(f"Gemini API error: {e}")
+            # Fall back to rule-based generation
+            return generate_ai_clinical_notes_fallback(context)
+    else:
+        # No Gemini available, use fallback
+        return generate_ai_clinical_notes_fallback(context)
+
+
+def generate_ai_clinical_notes_fallback(context: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Fallback rule-based generation when Gemini is unavailable.
     """
     entity_id = context.get("entity_id", "Unknown")
     vitals = context.get("current_vitals", {})
     trends = context.get("trends", {})
     deviations = context.get("deviations", [])
     
-    # Build SOAP Note
     subjective = "Patient data obtained from continuous wearable monitoring. "
     subjective += "No subjective complaints documented during this monitoring period."
     
@@ -103,17 +306,9 @@ def generate_ai_clinical_notes(context: Dict[str, Any]) -> Dict[str, Any]:
     objective += f"BP {vitals.get('bp_systolic', 0):.0f}/{vitals.get('bp_diastolic', 0):.0f} mmHg. "
     objective += f"EDA {vitals.get('eda_mean', 0):.2f} µS ({trends.get('eda_trend', 'stable')})."
     
-    # Assessment with probabilistic language
     assessment = "Based on wearable data analysis: "
     if deviations:
         assessment += "Observed deviations from baseline may warrant further evaluation. "
-        for dev in deviations:
-            if dev["signal"] == "hr_mean":
-                assessment += f"Heart rate appears elevated ({dev['deviation_pct']:.1f}% above baseline), "
-                assessment += "which could suggest increased physiological stress or activity. "
-            if dev["signal"] == "eda_mean":
-                assessment += f"Electrodermal activity is elevated, which may be consistent with "
-                assessment += "autonomic arousal or stress response. "
     else:
         assessment += "Vital parameters appear within expected ranges based on available data. "
     assessment += "Clinical correlation recommended."
@@ -122,47 +317,16 @@ def generate_ai_clinical_notes(context: Dict[str, Any]) -> Dict[str, Any]:
     plan += "2. Review trends at next clinical encounter. "
     if deviations:
         plan += "3. Consider evaluation if deviations persist or worsen. "
-    plan += "Further clinical assessment required for definitive management."
     
-    # HPI (History of Present Illness)
     hpi = f"This is a continuous monitoring report for patient {entity_id}. "
-    hpi += f"Data collected over {context.get('time_context', {}).get('measurement_count', 0)} measurements "
-    hpi += f"from {context.get('time_context', {}).get('data_start', 'N/A')[:10]} to present. "
-    if trends.get("hr_trend") == "increasing":
-        hpi += "Heart rate has shown an upward trend during the monitoring period. "
-    if trends.get("eda_trend") == "elevated":
-        hpi += "Electrodermal activity has been persistently elevated. "
+    hpi += f"Data collected over {context.get('time_context', {}).get('measurement_count', 0)} measurements."
     
-    # Patient Summary
     patient_summary = f"Patient {entity_id} - Wearable Monitoring Summary\n"
-    patient_summary += f"Period: {context.get('time_context', {}).get('data_start', 'N/A')[:10]} to present\n"
-    patient_summary += f"Data Points: {context.get('time_context', {}).get('measurement_count', 0)}\n"
-    patient_summary += f"Current Status: "
-    if deviations:
-        patient_summary += "Some parameters deviate from baseline - review recommended."
-    else:
-        patient_summary += "Parameters within expected ranges."
+    patient_summary += f"Status: {'Deviations noted' if deviations else 'Within expected ranges'}"
     
-    # Preliminary Clinical Impression (with strong disclaimer)
-    differentials = []
+    differentials = ["Normal physiological variation", "Activity-related changes"]
     if vitals.get("hr_mean", 0) > 90:
-        differentials.append("physiological stress response")
-        differentials.append("anxiety or emotional state")
-        differentials.append("increased physical activity")
-        differentials.append("medication effects")
-    if vitals.get("eda_mean", 0) > 0.4:
-        differentials.append("autonomic arousal")
-        differentials.append("thermal regulation response")
-    if not differentials:
-        differentials.append("normal physiological variation")
-    
-    clinical_impression = "PRELIMINARY CLINICAL IMPRESSION (AI-Generated):\n\n"
-    clinical_impression += "Based on the available wearable data, the following possibilities "
-    clinical_impression += "may be considered:\n"
-    for i, diff in enumerate(differentials, 1):
-        clinical_impression += f"  {i}. {diff.capitalize()}\n"
-    clinical_impression += "\nNote: This is NOT a diagnosis. "
-    clinical_impression += "These are potential considerations based on pattern analysis only."
+        differentials.insert(0, "Possible physiological stress response")
     
     return {
         "soap_note": {
@@ -176,22 +340,107 @@ def generate_ai_clinical_notes(context: Dict[str, Any]) -> Dict[str, Any]:
         "patient_summary": patient_summary,
         "clinical_impression": {
             "differentials": differentials,
-            "narrative": clinical_impression
+            "narrative": "PRELIMINARY CLINICAL IMPRESSION (Rule-Based Fallback):\n" + "\n".join([f"• {d}" for d in differentials])
         },
         "disclaimer": "This is an AI-generated suggestion and must be reviewed, edited, or rejected by a licensed clinician.",
         "label": "AI-Suggested (Review Required)",
-        "generated_at": datetime.now().isoformat()
+        "generated_at": datetime.now().isoformat(),
+        "model": "fallback-rule-based"
     }
 
 
-# Sample subjects
-MOCK_SUBJECTS = [
-    {"id": "S01", "name": "John Smith", "age": 45, "condition": "Post-cardiac surgery"},
-    {"id": "S02", "name": "Maria Garcia", "age": 62, "condition": "Hypertension monitoring"},
-    {"id": "S03", "name": "James Wilson", "age": 38, "condition": "Stress assessment"},
-    {"id": "S04", "name": "Emily Chen", "age": 55, "condition": "Cardiac rehabilitation"},
-    {"id": "S05", "name": "Michael Brown", "age": 70, "condition": "Heart failure monitoring"},
-]
+def generate_chat_response_gemini(message: str, context: Dict, patient_name: str, 
+                                   condition: str) -> str:
+    """
+    Generate a clinical chat response using Gemini API.
+    """
+    vitals = context.get("current_vitals", {})
+    trends = context.get("trends", {})
+    deviations = context.get("deviations", [])
+    
+    prompt = f"""A clinician is asking about a patient. Answer their question based on the monitoring data.
+
+PATIENT: {patient_name}
+CONDITION: {condition}
+
+CURRENT VITALS:
+- Heart Rate: {vitals.get('hr_mean', 0):.1f} bpm (Trend: {trends.get('hr_trend', 'stable')})
+- SpO2: {vitals.get('spo2', 0):.1f}%
+- Temperature: {vitals.get('temp', 0):.2f}°C
+- Respiratory Rate: {vitals.get('resp_rate', 0):.1f}/min
+- Blood Pressure: {vitals.get('bp_systolic', 0):.0f}/{vitals.get('bp_diastolic', 0):.0f} mmHg
+- EDA: {vitals.get('eda_mean', 0):.3f} µS (Trend: {trends.get('eda_trend', 'stable')})
+
+DEVIATIONS FROM BASELINE:
+{json.dumps(deviations, indent=2) if deviations else "None detected"}
+
+CLINICIAN'S QUESTION: {message}
+
+Provide a helpful, concise response. Remember:
+- Use probabilistic language
+- Do NOT diagnose
+- Reference specific values from the data
+- End with a reminder that clinical judgment is required"""
+
+    if gemini_model:
+        try:
+            response = gemini_model.generate_content(
+                [CLINICAL_SYSTEM_PROMPT, prompt],
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.4,
+                    max_output_tokens=800,
+                )
+            )
+            
+            response_text = response.text.strip()
+            
+            # Ensure disclaimer is present
+            if "clinical judgment" not in response_text.lower():
+                response_text += "\n\n---\n*AI-assisted insight. Clinical judgment required.*"
+            
+            return response_text
+            
+        except Exception as e:
+            print(f"Gemini chat error: {e}")
+            return f"DEBUG ERROR: {str(e)}"
+            # return generate_chat_response_fallback(message, context, patient_name, condition, vitals, trends, deviations)
+    else:
+        return generate_chat_response_fallback(message, context, patient_name, condition, vitals, trends, deviations)
+
+
+def generate_chat_response_fallback(message: str, context: Dict, patient_name: str, 
+                                     condition: str, vitals: Dict, trends: Dict, 
+                                     deviations: List) -> str:
+    """
+    Fallback rule-based chat response when Gemini is unavailable.
+    """
+    message_lower = message.lower()
+    response_parts = []
+    
+    if any(word in message_lower for word in ["vital", "vitals", "current", "status"]):
+        response_parts.append(f"**Current Vital Signs for {patient_name}:**")
+        response_parts.append(f"• Heart Rate: {vitals.get('hr_mean', 0):.0f} bpm (Trend: {trends.get('hr_trend', 'stable')})")
+        response_parts.append(f"• SpO2: {vitals.get('spo2', 0):.0f}%")
+        response_parts.append(f"• Temperature: {vitals.get('temp', 0):.1f}°C")
+        response_parts.append(f"• Blood Pressure: {vitals.get('bp_systolic', 0):.0f}/{vitals.get('bp_diastolic', 0):.0f} mmHg")
+    elif any(word in message_lower for word in ["trend", "concern", "worry", "problem"]):
+        response_parts.append(f"**Analysis for {patient_name}:**")
+        if deviations:
+            response_parts.append("Observed deviations that may warrant attention:")
+            for dev in deviations:
+                signal = dev["signal"].replace("_", " ").title()
+                response_parts.append(f"• {signal}: {dev['deviation_pct']:.1f}% {dev['direction'].replace('_', ' ')}")
+        else:
+            response_parts.append("No significant deviations from baseline detected.")
+    else:
+        response_parts.append(f"**{patient_name} ({condition}):**")
+        response_parts.append(f"Current HR: {vitals.get('hr_mean', 0):.0f} bpm, SpO2: {vitals.get('spo2', 0):.0f}%")
+        if deviations:
+            response_parts.append("Note: Some parameters show deviation from baseline.")
+    
+    response_parts.append("\n---\n*AI-assisted insight (fallback mode). Clinical judgment required.*")
+    
+    return "\n".join(response_parts)
 
 
 # ============================================================================
@@ -204,7 +453,8 @@ def health_check():
     return jsonify({
         "status": "ok",
         "service": "MedGamma Clinical AI Backend",
-        "version": "1.0.0",
+        "version": "2.0.0",
+        "gemini_available": gemini_model is not None,
         "timestamp": datetime.now().isoformat()
     })
 
@@ -220,7 +470,7 @@ def get_subjects():
 
 @app.route('/api/context/<entity_id>', methods=['GET'])
 def get_context(entity_id: str):
-    """Get structured clinical context for a subject (from notebook processing)."""
+    """Get structured clinical context for a subject."""
     context = get_structured_context(entity_id)
     return jsonify(context)
 
@@ -228,24 +478,13 @@ def get_context(entity_id: str):
 @app.route('/api/generate-notes', methods=['POST'])
 def generate_notes():
     """
-    Generate AI clinical documentation from context.
-    
-    Expected JSON body:
-    {
-        "entity_id": "S01"
-    }
-    
-    Or provide custom context:
-    {
-        "context": { ... structured context ... }
-    }
+    Generate AI clinical documentation from context using Gemini.
     """
     try:
         data = request.get_json()
         if not data:
             return jsonify({"error": "No data provided"}), 400
         
-        # Get context either from provided data or by entity_id
         if "context" in data:
             context = data["context"]
         elif "entity_id" in data:
@@ -253,8 +492,8 @@ def generate_notes():
         else:
             return jsonify({"error": "Must provide entity_id or context"}), 400
         
-        # Generate AI clinical notes
-        notes = generate_ai_clinical_notes(context)
+        # Generate AI clinical notes (uses Gemini if available)
+        notes = generate_ai_clinical_notes_gemini(context)
         
         return jsonify({
             "success": True,
@@ -268,15 +507,7 @@ def generate_notes():
 @app.route('/api/chat', methods=['POST'])
 def clinical_chat():
     """
-    Clinical AI Assistant chat endpoint.
-    Analyzes patient data and provides AI-assisted insights.
-    
-    Expected JSON body:
-    {
-        "message": "What are the concerning trends for this patient?",
-        "entity_id": "S01",
-        "patient_context": { ... optional additional context ... }
-    }
+    Clinical AI Assistant chat endpoint using Gemini.
     """
     try:
         data = request.get_json()
@@ -291,121 +522,31 @@ def clinical_chat():
         
         if not entity_id:
             return jsonify({
-                "response": "Please select a patient first. I need patient-specific data to provide meaningful clinical insights.\n\nAI-assisted insight. Clinical judgment required.",
+                "response": "Please select a patient first. I need patient-specific data to provide meaningful clinical insights.\n\n*AI-assisted insight. Clinical judgment required.*",
                 "type": "error"
             })
         
         # Get patient context
         context = get_structured_context(entity_id)
-        vitals = context.get("current_vitals", {})
-        trends = context.get("trends", {})
-        deviations = context.get("deviations", [])
         
         # Find patient info
         patient_info = next((p for p in MOCK_SUBJECTS if p["id"] == entity_id), None)
         patient_name = patient_info.get("name", entity_id) if patient_info else entity_id
         patient_condition = patient_info.get("condition", "Unknown") if patient_info else "Unknown"
         
-        # Generate AI response based on the question
-        response = generate_clinical_response(message, context, patient_name, patient_condition, vitals, trends, deviations)
+        # Generate response (uses Gemini if available)
+        response = generate_chat_response_gemini(message, context, patient_name, patient_condition)
         
         return jsonify({
             "response": response,
             "type": "success",
             "entity_id": entity_id,
+            "model": "gemini-2.5-flash-lite" if gemini_model else "fallback",
             "timestamp": datetime.now().isoformat()
         })
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-def generate_clinical_response(message: str, context: Dict, patient_name: str, 
-                                condition: str, vitals: Dict, trends: Dict, 
-                                deviations: List) -> str:
-    """
-    Generate a clinical AI response following strict safety rules.
-    - Does NOT provide diagnoses
-    - Does NOT prescribe treatments
-    - Uses probabilistic language
-    - References specific patient values
-    - Ends with mandatory disclaimer
-    """
-    message_lower = message.lower()
-    
-    # Build response based on query type
-    response_parts = []
-    
-    # Check for vital signs questions
-    if any(word in message_lower for word in ["vital", "vitals", "current", "status", "how is"]):
-        response_parts.append(f"**Current Vital Signs for {patient_name}:**")
-        response_parts.append(f"• Heart Rate: {vitals.get('hr_mean', 0):.0f} bpm (Trend: {trends.get('hr_trend', 'stable')})")
-        response_parts.append(f"• SpO2: {vitals.get('spo2', 0):.0f}%")
-        response_parts.append(f"• Temperature: {vitals.get('temp', 0):.1f}°C")
-        response_parts.append(f"• Respiratory Rate: {vitals.get('resp_rate', 0):.0f}/min")
-        response_parts.append(f"• Blood Pressure: {vitals.get('bp_systolic', 0):.0f}/{vitals.get('bp_diastolic', 0):.0f} mmHg")
-        response_parts.append(f"• EDA: {vitals.get('eda_mean', 0):.2f} µS (Trend: {trends.get('eda_trend', 'stable')})")
-    
-    # Check for trend/concern questions
-    elif any(word in message_lower for word in ["trend", "concern", "worry", "abnormal", "problem", "issue"]):
-        response_parts.append(f"**Analysis for {patient_name} ({condition}):**")
-        if deviations:
-            response_parts.append("\n**Observed Deviations:**")
-            for dev in deviations:
-                signal = dev["signal"].replace("_", " ").title()
-                response_parts.append(f"• {signal}: {dev['deviation_pct']:.1f}% {dev['direction'].replace('_', ' ')}")
-            response_parts.append("\n**Interpretation:**")
-            response_parts.append("These deviations may warrant clinical attention. Possible considerations include:")
-            if vitals.get('hr_mean', 0) > 90:
-                response_parts.append("• Elevated HR could suggest physiological stress, anxiety, or activity-related changes")
-            if vitals.get('eda_mean', 0) > 0.4:
-                response_parts.append("• Elevated EDA may indicate autonomic arousal or stress response")
-        else:
-            response_parts.append("No significant deviations from baseline detected in current data.")
-            response_parts.append("Parameters appear within expected ranges based on available monitoring data.")
-    
-    # Check for history/summary questions
-    elif any(word in message_lower for word in ["history", "summary", "overview", "background"]):
-        time_ctx = context.get("time_context", {})
-        response_parts.append(f"**Patient Summary: {patient_name}**")
-        response_parts.append(f"• Condition: {condition}")
-        response_parts.append(f"• Monitoring Period: {time_ctx.get('data_start', 'N/A')[:10]} to present")
-        response_parts.append(f"• Data Points Collected: {time_ctx.get('measurement_count', 0)}")
-        response_parts.append(f"\n**Current Trends:**")
-        response_parts.append(f"• Heart Rate: {trends.get('hr_trend', 'stable')}")
-        response_parts.append(f"• Temperature: {trends.get('temp_trend', 'stable')}")
-        response_parts.append(f"• Electrodermal Activity: {trends.get('eda_trend', 'stable')}")
-    
-    # Check for comparison/baseline questions
-    elif any(word in message_lower for word in ["baseline", "compare", "change", "different"]):
-        response_parts.append(f"**Comparison to Baseline for {patient_name}:**")
-        if deviations:
-            for dev in deviations:
-                signal = dev["signal"].replace("_", " ").title()
-                response_parts.append(f"• {signal}: {dev['deviation_pct']:.1f}% deviation ({dev['direction'].replace('_', ' ')})")
-        else:
-            response_parts.append("Current values appear consistent with established baseline patterns.")
-    
-    # Generic/fallback response
-    else:
-        response_parts.append(f"**Analysis for {patient_name}:**")
-        response_parts.append(f"\nBased on the available monitoring data for this {condition} patient:")
-        response_parts.append(f"• Current HR: {vitals.get('hr_mean', 0):.0f} bpm")
-        response_parts.append(f"• Current SpO2: {vitals.get('spo2', 0):.0f}%")
-        response_parts.append(f"• Current Temp: {vitals.get('temp', 0):.1f}°C")
-        if deviations:
-            response_parts.append("\nNote: Some parameters show deviation from baseline - review recommended.")
-        else:
-            response_parts.append("\nParameters appear within expected ranges.")
-        response_parts.append("\nFor more specific analysis, you may ask about:")
-        response_parts.append("• Current vital signs and trends")
-        response_parts.append("• Concerning patterns or deviations")
-        response_parts.append("• Patient history and summary")
-    
-    # Add mandatory disclaimer
-    response_parts.append("\n---\n*AI-assisted insight. Clinical judgment required.*")
-    
-    return "\n".join(response_parts)
 
 
 # ============================================================================
@@ -414,10 +555,13 @@ def generate_clinical_response(message: str, context: Dict, patient_name: str,
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("MedGamma Clinical AI Backend")
+    print("MedGamma Clinical AI Backend (Gemini-Powered)")
     print("=" * 60)
+    print(f"Gemini API: {'[OK] Available' if gemini_model else '[X] Not configured'}")
+    if not gemini_model:
+        print(f"  Set API key: $env:GEMINI_API_KEY = 'your-key'")
     print(f"Starting server at http://localhost:5000")
-    print(f"API Documentation:")
+    print(f"API Endpoints:")
     print(f"  GET  /api/health           - Health check")
     print(f"  GET  /api/subjects         - List all subjects")
     print(f"  GET  /api/context/<id>     - Get structured context")
@@ -426,4 +570,3 @@ if __name__ == '__main__':
     print("=" * 60)
     
     app.run(debug=True, host='0.0.0.0', port=5000)
-
