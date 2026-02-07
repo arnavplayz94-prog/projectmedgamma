@@ -265,6 +265,149 @@ def generate_notes():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/chat', methods=['POST'])
+def clinical_chat():
+    """
+    Clinical AI Assistant chat endpoint.
+    Analyzes patient data and provides AI-assisted insights.
+    
+    Expected JSON body:
+    {
+        "message": "What are the concerning trends for this patient?",
+        "entity_id": "S01",
+        "patient_context": { ... optional additional context ... }
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        message = data.get("message", "").strip()
+        entity_id = data.get("entity_id")
+        
+        if not message:
+            return jsonify({"error": "Message is required"}), 400
+        
+        if not entity_id:
+            return jsonify({
+                "response": "Please select a patient first. I need patient-specific data to provide meaningful clinical insights.\n\nAI-assisted insight. Clinical judgment required.",
+                "type": "error"
+            })
+        
+        # Get patient context
+        context = get_structured_context(entity_id)
+        vitals = context.get("current_vitals", {})
+        trends = context.get("trends", {})
+        deviations = context.get("deviations", [])
+        
+        # Find patient info
+        patient_info = next((p for p in MOCK_SUBJECTS if p["id"] == entity_id), None)
+        patient_name = patient_info.get("name", entity_id) if patient_info else entity_id
+        patient_condition = patient_info.get("condition", "Unknown") if patient_info else "Unknown"
+        
+        # Generate AI response based on the question
+        response = generate_clinical_response(message, context, patient_name, patient_condition, vitals, trends, deviations)
+        
+        return jsonify({
+            "response": response,
+            "type": "success",
+            "entity_id": entity_id,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def generate_clinical_response(message: str, context: Dict, patient_name: str, 
+                                condition: str, vitals: Dict, trends: Dict, 
+                                deviations: List) -> str:
+    """
+    Generate a clinical AI response following strict safety rules.
+    - Does NOT provide diagnoses
+    - Does NOT prescribe treatments
+    - Uses probabilistic language
+    - References specific patient values
+    - Ends with mandatory disclaimer
+    """
+    message_lower = message.lower()
+    
+    # Build response based on query type
+    response_parts = []
+    
+    # Check for vital signs questions
+    if any(word in message_lower for word in ["vital", "vitals", "current", "status", "how is"]):
+        response_parts.append(f"**Current Vital Signs for {patient_name}:**")
+        response_parts.append(f"• Heart Rate: {vitals.get('hr_mean', 0):.0f} bpm (Trend: {trends.get('hr_trend', 'stable')})")
+        response_parts.append(f"• SpO2: {vitals.get('spo2', 0):.0f}%")
+        response_parts.append(f"• Temperature: {vitals.get('temp', 0):.1f}°C")
+        response_parts.append(f"• Respiratory Rate: {vitals.get('resp_rate', 0):.0f}/min")
+        response_parts.append(f"• Blood Pressure: {vitals.get('bp_systolic', 0):.0f}/{vitals.get('bp_diastolic', 0):.0f} mmHg")
+        response_parts.append(f"• EDA: {vitals.get('eda_mean', 0):.2f} µS (Trend: {trends.get('eda_trend', 'stable')})")
+    
+    # Check for trend/concern questions
+    elif any(word in message_lower for word in ["trend", "concern", "worry", "abnormal", "problem", "issue"]):
+        response_parts.append(f"**Analysis for {patient_name} ({condition}):**")
+        if deviations:
+            response_parts.append("\n**Observed Deviations:**")
+            for dev in deviations:
+                signal = dev["signal"].replace("_", " ").title()
+                response_parts.append(f"• {signal}: {dev['deviation_pct']:.1f}% {dev['direction'].replace('_', ' ')}")
+            response_parts.append("\n**Interpretation:**")
+            response_parts.append("These deviations may warrant clinical attention. Possible considerations include:")
+            if vitals.get('hr_mean', 0) > 90:
+                response_parts.append("• Elevated HR could suggest physiological stress, anxiety, or activity-related changes")
+            if vitals.get('eda_mean', 0) > 0.4:
+                response_parts.append("• Elevated EDA may indicate autonomic arousal or stress response")
+        else:
+            response_parts.append("No significant deviations from baseline detected in current data.")
+            response_parts.append("Parameters appear within expected ranges based on available monitoring data.")
+    
+    # Check for history/summary questions
+    elif any(word in message_lower for word in ["history", "summary", "overview", "background"]):
+        time_ctx = context.get("time_context", {})
+        response_parts.append(f"**Patient Summary: {patient_name}**")
+        response_parts.append(f"• Condition: {condition}")
+        response_parts.append(f"• Monitoring Period: {time_ctx.get('data_start', 'N/A')[:10]} to present")
+        response_parts.append(f"• Data Points Collected: {time_ctx.get('measurement_count', 0)}")
+        response_parts.append(f"\n**Current Trends:**")
+        response_parts.append(f"• Heart Rate: {trends.get('hr_trend', 'stable')}")
+        response_parts.append(f"• Temperature: {trends.get('temp_trend', 'stable')}")
+        response_parts.append(f"• Electrodermal Activity: {trends.get('eda_trend', 'stable')}")
+    
+    # Check for comparison/baseline questions
+    elif any(word in message_lower for word in ["baseline", "compare", "change", "different"]):
+        response_parts.append(f"**Comparison to Baseline for {patient_name}:**")
+        if deviations:
+            for dev in deviations:
+                signal = dev["signal"].replace("_", " ").title()
+                response_parts.append(f"• {signal}: {dev['deviation_pct']:.1f}% deviation ({dev['direction'].replace('_', ' ')})")
+        else:
+            response_parts.append("Current values appear consistent with established baseline patterns.")
+    
+    # Generic/fallback response
+    else:
+        response_parts.append(f"**Analysis for {patient_name}:**")
+        response_parts.append(f"\nBased on the available monitoring data for this {condition} patient:")
+        response_parts.append(f"• Current HR: {vitals.get('hr_mean', 0):.0f} bpm")
+        response_parts.append(f"• Current SpO2: {vitals.get('spo2', 0):.0f}%")
+        response_parts.append(f"• Current Temp: {vitals.get('temp', 0):.1f}°C")
+        if deviations:
+            response_parts.append("\nNote: Some parameters show deviation from baseline - review recommended.")
+        else:
+            response_parts.append("\nParameters appear within expected ranges.")
+        response_parts.append("\nFor more specific analysis, you may ask about:")
+        response_parts.append("• Current vital signs and trends")
+        response_parts.append("• Concerning patterns or deviations")
+        response_parts.append("• Patient history and summary")
+    
+    # Add mandatory disclaimer
+    response_parts.append("\n---\n*AI-assisted insight. Clinical judgment required.*")
+    
+    return "\n".join(response_parts)
+
+
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -279,6 +422,8 @@ if __name__ == '__main__':
     print(f"  GET  /api/subjects         - List all subjects")
     print(f"  GET  /api/context/<id>     - Get structured context")
     print(f"  POST /api/generate-notes   - Generate AI clinical notes")
+    print(f"  POST /api/chat             - Clinical AI Assistant chat")
     print("=" * 60)
     
     app.run(debug=True, host='0.0.0.0', port=5000)
+

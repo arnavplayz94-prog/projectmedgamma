@@ -459,6 +459,51 @@
         </div>
     </div>
 
+    <!-- Clinical AI Assistant Chatbot -->
+    <aside class="ai-chat-panel hidden" id="aiChatPanel">
+        <div class="chat-header">
+            <div class="chat-header-info">
+                <span class="chat-icon">🩺</span>
+                <div>
+                    <h3 class="chat-title">Clinical AI Assistant</h3>
+                    <span class="chat-subtitle">Patient-Context Analysis</span>
+                </div>
+            </div>
+            <button class="chat-close" id="aiChatClose" aria-label="Close chat">✕</button>
+        </div>
+        <div class="chat-disclaimer">
+            AI-assisted insights only. Does not replace clinical judgment.
+        </div>
+        <div class="chat-messages" id="chatMessages">
+            <div class="chat-message assistant">
+                <div class="message-content">
+                    <p>I am your Patient-Context Clinical AI Assistant. I can help you:</p>
+                    <ul>
+                        <li>Analyze current patient vitals and trends</li>
+                        <li>Interpret AI-generated notes</li>
+                        <li>Identify patterns or concerns</li>
+                        <li>Explain clinical reasoning</li>
+                    </ul>
+                    <p>Select a patient and ask me a question about their data.</p>
+                    <p class="mandatory-disclaimer">AI-assisted insight. Clinical judgment required.</p>
+                </div>
+            </div>
+        </div>
+        <div class="chat-input-area">
+            <textarea class="chat-input" id="chatInput" placeholder="Ask about the patient's data..."
+                rows="2"></textarea>
+            <button class="chat-send" id="chatSend" aria-label="Send message">
+                <span>Send</span>
+            </button>
+        </div>
+    </aside>
+
+    <!-- AI Chat Toggle Button -->
+    <button class="ai-chat-toggle" id="aiChatToggle" aria-label="Open AI Assistant">
+        <span class="toggle-icon">🩺</span>
+        <span class="toggle-label">AI Assistant</span>
+    </button>
+
     <!-- Secure Messages Panel (Requirement 9) -->
     <aside class="messages-panel hidden" id="messagesPanel">
         <div class="panel-header">

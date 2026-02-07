@@ -250,6 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeSettings();
     initializeSearch();
     initializeModals();
+    initializeChatbot();
 
     // Initial render
     renderPatientList();
@@ -1528,3 +1529,159 @@ function initializePatientDetailView() {
         AppState.currentView = 'dashboard';
     });
 }
+
+// =====================================================
+// Clinical AI Chatbot
+// =====================================================
+function initializeChatbot() {
+    const toggleBtn = document.getElementById('aiChatToggle');
+    const chatPanel = document.getElementById('aiChatPanel');
+    const closeBtn = document.getElementById('aiChatClose');
+    const sendBtn = document.getElementById('chatSend');
+    const inputField = document.getElementById('chatInput');
+
+    // Toggle chat panel
+    toggleBtn?.addEventListener('click', () => {
+        chatPanel?.classList.toggle('hidden');
+        if (!chatPanel?.classList.contains('hidden')) {
+            inputField?.focus();
+        }
+    });
+
+    // Close chat panel
+    closeBtn?.addEventListener('click', () => {
+        chatPanel?.classList.add('hidden');
+    });
+
+    // Send message on button click
+    sendBtn?.addEventListener('click', sendChatMessage);
+
+    // Send message on Enter (but allow Shift+Enter for new lines)
+    inputField?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendChatMessage();
+        }
+    });
+}
+
+async function sendChatMessage() {
+    const inputField = document.getElementById('chatInput');
+    const messagesContainer = document.getElementById('chatMessages');
+    const sendBtn = document.getElementById('chatSend');
+
+    const message = inputField?.value.trim();
+    if (!message) return;
+
+    // Clear input
+    inputField.value = '';
+
+    // Add user message to chat
+    addChatMessage('user', message);
+
+    // Disable send button
+    if (sendBtn) sendBtn.disabled = true;
+
+    // Show typing indicator
+    const typingIndicator = addTypingIndicator();
+
+    try {
+        const patient = AppState.selectedPatient;
+
+        // Call backend chat API
+        const response = await fetch('http://localhost:5000/api/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: message,
+                entity_id: patient?.id || null
+            })
+        });
+
+        // Remove typing indicator
+        typingIndicator?.remove();
+
+        if (!response.ok) {
+            throw new Error('Failed to get response');
+        }
+
+        const data = await response.json();
+
+        // Add AI response
+        addChatMessage('assistant', data.response);
+
+    } catch (error) {
+        console.error('Chat error:', error);
+        typingIndicator?.remove();
+        addChatMessage('assistant', 'Unable to connect to Clinical AI backend. Please ensure the backend server is running.\n\n---\n*AI-assisted insight. Clinical judgment required.*');
+    } finally {
+        if (sendBtn) sendBtn.disabled = false;
+        inputField?.focus();
+    }
+}
+
+function addChatMessage(type, content) {
+    const messagesContainer = document.getElementById('chatMessages');
+    if (!messagesContainer) return;
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `chat-message ${type}`;
+
+    // Parse markdown-like formatting
+    const formattedContent = formatChatContent(content);
+
+    messageDiv.innerHTML = `<div class="message-content">${formattedContent}</div>`;
+
+    messagesContainer.appendChild(messageDiv);
+
+    // Scroll to bottom
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function formatChatContent(content) {
+    // Convert markdown-like syntax to HTML
+    let html = content
+        // Bold text
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        // Italic text
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        // Bullet points
+        .replace(/^• (.+)$/gm, '<li>$1</li>')
+        // Line breaks
+        .replace(/\n/g, '<br>');
+
+    // Wrap consecutive <li> items in <ul>
+    html = html.replace(/(<li>.*?<\/li>)(<br>)?(<li>)/g, '$1$3');
+    html = html.replace(/(<li>.*?<\/li>)+/g, '<ul>$&</ul>');
+
+    // Handle horizontal rule
+    html = html.replace(/<br>---<br>/g, '<hr>');
+
+    return html;
+}
+
+function addTypingIndicator() {
+    const messagesContainer = document.getElementById('chatMessages');
+    if (!messagesContainer) return null;
+
+    const indicator = document.createElement('div');
+    indicator.className = 'chat-message assistant';
+    indicator.id = 'typingIndicator';
+    indicator.innerHTML = `
+        <div class="message-content">
+            <div class="typing-indicator">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    `;
+
+    messagesContainer.appendChild(indicator);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    return indicator;
+}
+
