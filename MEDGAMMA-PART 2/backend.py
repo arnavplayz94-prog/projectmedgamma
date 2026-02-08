@@ -1,7 +1,8 @@
 """
-MedGamma Backend Server - Synthetic Patient Data + Gemini AI
-=============================================================
-Flask backend using the provided synthetic patient dataset.
+MedGamma Backend Server - Synthetic Patient Data + BBY AI Agent
+================================================================
+Flask backend integrating the advanced BBY clinical AI agent
+with the synthetic patient dataset.
 
 ALL AI outputs are derived ONLY from the synthetic dataset.
 NO mock, fallback, or hallucinated data is permitted.
@@ -31,6 +32,9 @@ from patient_data import (
     build_objective_data,
     patient_summary_text
 )
+
+# Import BBY Advanced Clinical AI Agent
+import bby
 
 # Initialize Gemini
 try:
@@ -175,10 +179,11 @@ def get_patient_details(patient_id: str):
 @app.route('/api/generate-notes', methods=['POST'])
 def generate_notes():
     """
-    Generate SOAP notes using synthetic patient data + Gemini.
+    Generate clinical notes using synthetic patient data + BBY AI Agent.
+    Uses the advanced 5-point clinical format from bby.py.
     All outputs are derived from the dataset - no fabrication.
     """
-    if not gemini_model:
+    if not bby.gemini_model:
         return jsonify({
             "error": "Gemini API not configured. Set GEMINI_API_KEY.",
             "error_type": "API_NOT_CONFIGURED"
@@ -203,7 +208,41 @@ def generate_notes():
         objective = build_objective_data(patient_id)
         summary_text = patient_summary_text(patient_id)
         
-        # Generate SOAP note with Gemini
+        # Build a recovery summary structure for the BBY agent
+        # This bridges patient_data.py format to bby.py expected format
+        bby_summary = {
+            "entity_id": patient_id,
+            "trend": context["risk_assessment"]["level"],  # Map risk level to trend
+            "signals_used": ["hr_mean", "bp_systolic", "spo2"],
+            "overall": {
+                "median_slope": None,  # Not available in synthetic data
+                "median_time_to_baseline_min": None,
+                "median_excess_auc": None,
+                "mean_rebound_rate": None
+            },
+            "per_signal": {},
+            "risk_flags": [{"flag": f, "evidence": "From patient data"} for f in context["risk_assessment"]["factors"]],
+            "uncertainty": {"level": "medium", "reasons": ["Using synthetic dataset averages"]},
+            "tag_count": 0
+        }
+        
+        # Generate comprehensive clinical note using BBY agent's format
+        bby_compact = bby.compact_for_llm(bby_summary)
+        summary_json = json.dumps(bby_compact, ensure_ascii=False, indent=2)
+        
+        # Use BBY agent's USER_TEMPLATE for the advanced 5-point format
+        clinical_prompt = bby.USER_TEMPLATE.format(
+            patient_context=f"Patient {patient_id}: {context['demographics']['age']}-year-old {context['demographics']['sex']}, "
+                           f"BMI {context['bmi']}, presenting with: {', '.join(context['symptoms']) if context['symptoms'] else 'No symptoms reported'}. "
+                           f"Medical history: {', '.join(context['medical_history']) if context['medical_history'] else 'None'}. "
+                           f"Vitals: HR {context['vitals']['heart_rate_avg']} bpm, BP {context['vitals']['blood_pressure']}, SpO2 {context['vitals']['spo2_percent']}%.",
+            summary_json=summary_json
+        )
+        
+        # Call Gemini using BBY agent's llm_gemini function
+        clinical_note = bby.llm_gemini(bby.SYSTEM_PROMPT, clinical_prompt)
+        
+        # Also generate a traditional SOAP note for compatibility
         soap_prompt = f"""
 Based ONLY on the following patient data, generate a SOAP note.
 Do NOT invent any information not present in the data.
@@ -219,42 +258,14 @@ Generate a SOAP note with these sections:
 Include a disclaimer that this is AI-generated and requires clinical review.
 """
         
-        soap_response = call_gemini(CLINICAL_SYSTEM_PROMPT, soap_prompt)
-        
-        # Generate patient summary with Gemini
-        summary_prompt = f"""
-Based ONLY on this patient data, write a brief clinical summary (3-4 sentences):
-
-{summary_text}
-
-Focus on key findings, risk factors, and areas requiring attention.
-Use probabilistic language. Do not diagnose.
-"""
-        
-        patient_summary = call_gemini(CLINICAL_SYSTEM_PROMPT, summary_prompt)
-        
-        # Generate clinical impression with Gemini
-        impression_prompt = f"""
-Based ONLY on this patient data, provide a preliminary clinical impression:
-
-{summary_text}
-
-Include:
-1. Key observations from the data
-2. Potential areas of concern (use "may", "could", "suggests")
-3. Recommended considerations for the clinician
-
-This is NOT a diagnosis. Use uncertainty-aware language.
-"""
-        
-        clinical_impression = call_gemini(CLINICAL_SYSTEM_PROMPT, impression_prompt)
+        soap_response = bby.llm_gemini(bby.SYSTEM_PROMPT, soap_prompt)
         
         # Store in session
         session = get_session_context(patient_id)
         session["generated_notes"] = {
             "soap": soap_response,
-            "summary": patient_summary,
-            "impression": clinical_impression
+            "summary": clinical_note,  # BBY agent 5-point format
+            "impression": clinical_note
         }
         
         return jsonify({
@@ -266,15 +277,19 @@ This is NOT a diagnosis. Use uncertainty-aware language.
                     "subjective_data": subjective,
                     "objective_data": objective
                 },
-                "patient_summary": patient_summary,
-                "clinical_impression": clinical_impression
+                "patient_summary": clinical_note,  # BBY agent's advanced 5-point format
+                "clinical_impression": clinical_note
+            },
+            "bby_agent": {
+                "format": "5-point clinical note",
+                "sections": ["Clinical summary", "Risk level", "Questions to ask", "Suggested next step", "Safety note"]
             },
             "context": context,
             "disclaimer": "AI-generated clinical documentation. Must be reviewed, edited, or rejected by a licensed clinician.",
             "label": "AI-Suggested (Review Required)",
             "editable": True,
             "rejectable": True,
-            "model": "gemini-2.5-flash-lite",
+            "model": "gemini-2.5-flash-lite via BBY Agent",
             "data_source": "synthetic_dataset",
             "traceable_fields": list(context.keys()),
             "generated_at": datetime.now().isoformat()
@@ -302,9 +317,9 @@ This is NOT a diagnosis. Use uncertainty-aware language.
 def clinical_chat():
     """
     Clinical AI chatbot with patient context.
-    Uses ONLY the synthetic dataset for responses.
+    Uses BBY agent for AI responses with synthetic dataset.
     """
-    if not gemini_model:
+    if not bby.gemini_model:
         return jsonify({
             "error": "Gemini API not configured. Set GEMINI_API_KEY.",
             "error_type": "API_NOT_CONFIGURED"
@@ -360,7 +375,8 @@ INSTRUCTIONS:
 - Be concise and clinically relevant
 """
         
-        response = call_gemini(CLINICAL_SYSTEM_PROMPT, chat_prompt)
+        # Use BBY agent's llm_gemini function
+        response = bby.llm_gemini(bby.SYSTEM_PROMPT, chat_prompt)
         
         # Update chat history
         session["chat_history"].append({
@@ -378,7 +394,7 @@ INSTRUCTIONS:
             "response": response,
             "type": "success",
             "patient_id": patient_id,
-            "model": "gemini-2.5-flash-lite",
+            "model": "gemini-2.5-flash-lite via BBY Agent",
             "data_source": "synthetic_dataset",
             "context_available": True,
             "timestamp": datetime.now().isoformat()

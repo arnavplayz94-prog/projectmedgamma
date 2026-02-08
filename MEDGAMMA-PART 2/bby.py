@@ -497,20 +497,9 @@ def summarize_entity_tag_recovery(df_ent: pd.DataFrame, tags: pd.DatetimeIndex) 
 # In[10]:
 
 
-summaries = []
-demo = []
-
-# Only process if data was loaded
-if not df.empty:
-    for eid, g in df.groupby("entity_id"):
-        tags = tags_by_subject.get(eid, pd.DatetimeIndex([]))
-        summaries.append(summarize_entity_tag_recovery(g.sort_values("date"), tags))
-
-    print("Summaries:", len(summaries))
-
-
-# In[11]:
-
+# ==============================================================================
+# HELPER FUNCTIONS (available for import)
+# ==============================================================================
 
 def pick_demo_cases_by_trend(summaries, k=3):
     by = {}
@@ -524,13 +513,6 @@ def pick_demo_cases_by_trend(summaries, k=3):
     demo += rest[:max(0, k-len(demo))]
     return demo[:k]
 
-if summaries:
-    demo = pick_demo_cases_by_trend(summaries, k=3)
-print("Demo:", [(d["entity_id"], d["trend"], d["tag_count"]) for d in demo])
-
-
-# In[12]:
-
 
 def plot_subject_with_tags(df_ent: pd.DataFrame, tags: pd.DatetimeIndex, signal: str):
     df_ent = df_ent.sort_values("date")
@@ -543,23 +525,8 @@ def plot_subject_with_tags(df_ent: pd.DataFrame, tags: pd.DatetimeIndex, signal:
         plt.axvspan(t, t + pd.Timedelta(minutes=REC_CFG["post_minutes"]), alpha=0.08)
     plt.tight_layout(); plt.show()
 
-for d in demo:
-    eid = d["entity_id"]
-    g = df[df["entity_id"] == eid]
-    tags = tags_by_subject.get(eid, pd.DatetimeIndex([]))
-    sig = "hr_mean" if "hr_mean" in g.columns else (REC_CFG["signals"][0] if REC_CFG["signals"] else None)
-    if sig is None:
-        print("No usable signals found in df.")
-        break
-    plot_subject_with_tags(g, tags, sig)
-    print("SUMMARY (truncated):", json.dumps(d, ensure_ascii=False)[:350], "...")
-    print("-"*90)
-
 
 # ## 8. Compact JSON for MedGemma + safe stub
-
-# In[13]:
-
 
 def compact_for_llm(summary: Dict[str, Any]) -> Dict[str, Any]:
     return {
@@ -590,7 +557,7 @@ USER_TEMPLATE = (
     "5) Safety note / when to escalate (1-2 bullets)\n"
 )
 
-def build_patient_context(entity_id: str) -> str:
+def build_patient_context_bby(entity_id: str) -> str:
     return f"Entity {entity_id}: synthetic wearable monitoring; post-event recovery assessment from HR/EDA."
 
 def llm_gemini(system_prompt: str, user_prompt: str) -> str:
@@ -622,14 +589,47 @@ def generate_clinical_note(summary: Dict[str, Any]) -> str:
     compact = compact_for_llm(summary)
     summary_json = json.dumps(compact, ensure_ascii=False, indent=2)
     user_prompt = USER_TEMPLATE.format(
-        patient_context=build_patient_context(compact["entity_id"]),
+        patient_context=build_patient_context_bby(compact["entity_id"]),
         summary_json=summary_json
     )
     return llm_gemini(SYSTEM_PROMPT, user_prompt)
 
-if demo:
-    print("Example compact JSON:")
-    print(json.dumps(compact_for_llm(demo[0]), ensure_ascii=False, indent=2)[:1200])
-    print("\nExample note:")
-    print(generate_clinical_note(demo[0]))
 
+# ==============================================================================
+# DEMO / STANDALONE EXECUTION
+# ==============================================================================
+# The following code only runs when bby.py is executed directly (not imported)
+
+if __name__ == "__main__":
+    summaries = []
+    demo = []
+
+    # Only process if data was loaded
+    if not df.empty:
+        for eid, g in df.groupby("entity_id"):
+            tags = tags_by_subject.get(eid, pd.DatetimeIndex([]))
+            summaries.append(summarize_entity_tag_recovery(g.sort_values("date"), tags))
+
+        print("Summaries:", len(summaries))
+
+    if summaries:
+        demo = pick_demo_cases_by_trend(summaries, k=3)
+    print("Demo:", [(d["entity_id"], d["trend"], d["tag_count"]) for d in demo])
+
+    for d in demo:
+        eid = d["entity_id"]
+        g = df[df["entity_id"] == eid]
+        tags = tags_by_subject.get(eid, pd.DatetimeIndex([]))
+        sig = "hr_mean" if "hr_mean" in g.columns else (REC_CFG["signals"][0] if REC_CFG["signals"] else None)
+        if sig is None:
+            print("No usable signals found in df.")
+            break
+        plot_subject_with_tags(g, tags, sig)
+        print("SUMMARY (truncated):", json.dumps(d, ensure_ascii=False)[:350], "...")
+        print("-"*90)
+
+    if demo:
+        print("Example compact JSON:")
+        print(json.dumps(compact_for_llm(demo[0]), ensure_ascii=False, indent=2)[:1200])
+        print("\nExample note:")
+        print(generate_clinical_note(demo[0]))
