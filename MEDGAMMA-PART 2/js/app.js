@@ -231,13 +231,8 @@ function getTrendText(current, baseline) {
 // =====================================================
 // Initialization
 // =====================================================
-document.addEventListener('DOMContentLoaded', () => {
-    // Load sample data
-    AppState.patients = DataGenerator.generateSamplePatients();
-    AppState.alerts = DataGenerator.generateSampleAlerts();
-    AppState.notes = DataGenerator.generateSampleNotes();
-
-    // Initialize all components
+document.addEventListener('DOMContentLoaded', async () => {
+    // Initialize components
     initializeSidebar();
     initializePatientList();
     initializeFilters();
@@ -251,6 +246,41 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeSearch();
     initializeModals();
     initializeChatbot();
+
+    // Fetch real patients from the backend to ensure IDs match (P001, P002, P003)
+    try {
+        const response = await fetch('http://127.0.0.1:5000/api/patients');
+        if (response.ok) {
+            const data = await response.json();
+            // Map backend data to frontend structure if necessary
+            AppState.patients = data.patients.map(p => ({
+                id: p.patient_id,
+                name: `${p.demographics.sex === 'Male' ? 'Mr.' : 'Ms.'} ${p.patient_id}`,
+                age: p.demographics.age,
+                gender: p.demographics.sex[0],
+                riskLevel: p.risk_assessment.level,
+                condition: 'Synthetic Monitoring',
+                notes: p.medical_history.join(', '),
+                lastUpdate: new Date(),
+                alertCount: p.risk_assessment.level === 'high' ? 1 : 0,
+                vitals: {
+                    hr: { value: p.vitals.heart_rate_avg, baseline: p.vitals.heart_rate_avg - 2, min: 60, max: 100 },
+                    bp: { systolic: parseInt(p.vitals.blood_pressure.split('/')[0]), diastolic: parseInt(p.vitals.blood_pressure.split('/')[1]), baseline: { s: 120, d: 80 } },
+                    spo2: { value: p.vitals.spo2_percent, baseline: 98, min: 94, max: 100 },
+                    temp: { value: p.vitals.body_temperature_c, baseline: 36.6, min: 36, max: 38 },
+                    resp: { value: p.vitals.respiratory_rate, baseline: 16, min: 12, max: 20 }
+                }
+            }));
+        } else {
+            AppState.patients = DataGenerator.generateSamplePatients();
+        }
+    } catch (e) {
+        console.warn('Could not fetch patients, using samples:', e);
+        AppState.patients = DataGenerator.generateSamplePatients();
+    }
+
+    AppState.alerts = DataGenerator.generateSampleAlerts();
+    AppState.notes = DataGenerator.generateSampleNotes();
 
     // Initial render
     renderPatientList();
@@ -864,13 +894,13 @@ async function generateAINotes() {
 
     try {
         // Call backend API to generate AI clinical notes
-        const response = await fetch('http://localhost:5000/api/generate-notes', {
+        const response = await fetch('http://127.0.0.1:5000/api/generate-notes', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                entity_id: patient.id
+                patient_id: patient.id
             })
         });
 
@@ -881,23 +911,28 @@ async function generateAINotes() {
         const data = await response.json();
         const notes = data.notes;
 
-        // Display SOAP Note with AI disclaimer
+        // Display the Advanced BBY Agent Note in the Summary and Impression tabs
+        // And use the traditional SOAP note in the SOAP tab
+
+        // Populate SOAP tab
         document.getElementById('noteSubjective').innerHTML = `
-            <span class="ai-label">AI-Suggested (Review Required)</span>
-            ${notes.soap_note.subjective}
+            <span class="ai-label">BBY Agent - Clinical Summary</span>
+            <div style="white-space: pre-wrap; margin-top: 10px;">${notes.patient_summary}</div>
         `;
         document.getElementById('noteObjective').innerHTML = `
-            <span class="ai-label">AI-Suggested (Review Required)</span>
-            ${notes.soap_note.objective}
+            <span class="ai-label">Traceable Patient Stats</span>
+            <div style="margin-top: 10px;">
+                • HR: ${data.context.vitals.heart_rate_avg} BPM<br>
+                • BP: ${data.context.vitals.blood_pressure} mmHg<br>
+                • SpO2: ${data.context.vitals.spo2_percent}%
+            </div>
         `;
         document.getElementById('noteAssessment').innerHTML = `
-            <span class="ai-label">AI-Suggested (Review Required)</span>
-            ${notes.soap_note.assessment}
+            <span class="ai-label">Clinical Impression</span>
+            <div style="white-space: pre-wrap; margin-top: 10px;">${notes.clinical_impression}</div>
         `;
         document.getElementById('notePlan').innerHTML = `
-            <span class="ai-label">AI-Suggested (Review Required)</span>
-            ${notes.soap_note.plan}
-            <div class="ai-disclaimer">${notes.disclaimer}</div>
+            <div class="ai-disclaimer">${data.disclaimer}</div>
         `;
 
         // Store additional note types for tab switching
@@ -907,8 +942,8 @@ async function generateAINotes() {
         const hpiEl = document.getElementById('noteHPI');
         if (hpiEl) {
             hpiEl.innerHTML = `
-                <span class="ai-label">AI-Suggested (Review Required)</span>
-                ${notes.hpi}
+                <span class="ai-label">BBY Agent Observation</span>
+                <div style="white-space: pre-wrap; margin-top: 10px;">${notes.clinical_impression}</div>
             `;
         }
 
@@ -916,8 +951,8 @@ async function generateAINotes() {
         const summaryEl = document.getElementById('notePatientSummary');
         if (summaryEl) {
             summaryEl.innerHTML = `
-                <span class="ai-label">AI-Suggested (Review Required)</span>
-                <pre style="white-space: pre-wrap; font-family: inherit;">${notes.patient_summary}</pre>
+                <span class="ai-label">BBY Agent Summary</span>
+                <div style="white-space: pre-wrap; margin-top: 10px;">${notes.patient_summary}</div>
             `;
         }
 
@@ -925,7 +960,8 @@ async function generateAINotes() {
         const impressionEl = document.getElementById('noteClinicalImpression');
         if (impressionEl) {
             impressionEl.innerHTML = `
-                <pre style="white-space: pre-wrap; font-family: inherit;">${notes.clinical_impression.narrative}</pre>
+                <span class="ai-label">BBY Agent Clinical Note</span>
+                <div style="white-space: pre-wrap; margin-top: 10px;">${notes.clinical_impression}</div>
             `;
         }
 
@@ -1589,14 +1625,14 @@ async function sendChatMessage() {
         const patient = AppState.selectedPatient;
 
         // Call backend chat API
-        const response = await fetch('http://localhost:5000/api/chat', {
+        const response = await fetch('http://127.0.0.1:5000/api/chat', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
                 message: message,
-                entity_id: patient?.id || null
+                patient_id: patient?.id || null
             })
         });
 

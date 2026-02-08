@@ -36,28 +36,6 @@ from patient_data import (
 # Import BBY Advanced Clinical AI Agent
 import bby
 
-# Initialize Gemini
-try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
-    print("[ERROR] google-generativeai not installed")
-
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-gemini_model = None
-
-if GEMINI_AVAILABLE and GEMINI_API_KEY:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
-        print("[OK] Gemini API initialized")
-    except Exception as e:
-        print(f"[ERROR] Failed to initialize Gemini: {e}")
-        gemini_model = None
-else:
-    print("[WARNING] Gemini API not configured")
-
 app = Flask(__name__)
 CORS(app)
 
@@ -144,12 +122,17 @@ def list_patients():
     """List all available patients from the synthetic dataset."""
     patients = []
     for pid, data in SYNTHETIC_PATIENTS.items():
+        # Build full context to include risk assessment
+        context = build_patient_context(pid)
+        
         patients.append({
             "patient_id": pid,
-            "age": data["demographics"]["age"],
-            "sex": data["demographics"]["sex"],
-            "conditions": data["medical_history"]
+            "demographics": data["demographics"],
+            "medical_history": data["medical_history"],
+            "risk_assessment": context["risk_assessment"],
+            "vitals": data["vitals"]
         })
+        
     return jsonify({
         "patients": patients,
         "count": len(patients),
@@ -423,9 +406,9 @@ INSTRUCTIONS:
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("MedGamma Backend (Synthetic Patient Data + Gemini)")
+    print("MedGamma Backend (Synthetic Patient Data + BBY Agent)")
     print("=" * 60)
-    print(f"Gemini API: {'[OK]' if gemini_model else '[NOT CONFIGURED]'}")
+    print(f"BBY Agent AI: {'[OK]' if bby.gemini_model else '[NOT CONFIGURED]'}")
     print(f"Patients Loaded: {len(SYNTHETIC_PATIENTS)}")
     print(f"Patient IDs: {', '.join(get_patient_ids())}")
     print("=" * 60)
@@ -437,4 +420,5 @@ if __name__ == '__main__':
     print("  POST /api/chat             - Clinical chatbot")
     print("=" * 60)
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # use_reloader=False prevents the common Windows "immediate exit" bug
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5000)
