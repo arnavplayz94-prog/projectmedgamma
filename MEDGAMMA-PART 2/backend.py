@@ -401,6 +401,84 @@ INSTRUCTIONS:
 
 
 # ============================================================================
+# CHAT ENDPOINT
+# ============================================================================
+
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    """
+    Clinical chatbot using BBY AI Agent.
+    Provides AI-assisted responses based on patient context.
+    """
+    if not bby.gemini_model:
+        return jsonify({
+            "error": "Gemini API not configured. Set GEMINI_API_KEY.",
+            "error_type": "API_NOT_CONFIGURED"
+        }), 500
+    
+    try:
+        data = request.get_json()
+        if not data or "message" not in data:
+            return jsonify({
+                "error": "message is required",
+                "error_type": "VALIDATION_ERROR"
+            }), 400
+        
+        user_message = data["message"]
+        patient_id = data.get("patient_id")
+        
+        # Build context if patient is selected
+        context_text = ""
+        if patient_id and patient_id in SYNTHETIC_PATIENTS:
+            context = build_patient_context(patient_id)
+            context_text = f"""
+Current Patient Context (Patient {patient_id}):
+- Age: {context['demographics']['age']}, Sex: {context['demographics']['sex']}
+- BMI: {context['bmi']}
+- Vitals: HR {context['vitals']['heart_rate_avg']} bpm, BP {context['vitals']['blood_pressure']}, SpO2 {context['vitals']['spo2_percent']}%
+- Symptoms: {', '.join(context['symptoms']) if context['symptoms'] else 'None reported'}
+- Medical History: {', '.join(context['medical_history']) if context['medical_history'] else 'None'}
+- Medications: {', '.join(context['medications']) if context['medications'] else 'None'}
+- Risk Level: {context['risk_assessment']['level']}
+"""
+        
+        # Create clinical chat prompt
+        chat_system_prompt = """You are a clinical AI assistant for healthcare professionals.
+        
+MANDATORY RULES:
+1. Use ONLY the patient data provided - do NOT invent information
+2. Do NOT provide definitive diagnoses
+3. Do NOT prescribe treatments - suggest clinical considerations only
+4. Be uncertainty-aware and always recommend physician review
+5. Keep responses concise and clinically relevant
+
+Always end with a disclaimer that this is AI-generated and requires clinical judgment."""
+
+        chat_user_prompt = f"""{context_text}
+
+Doctor's Question: {user_message}
+
+Provide a helpful, clinically-informed response based on the available patient data. If no patient is selected, provide general clinical guidance."""
+
+        # Call BBY Agent's Gemini function
+        response_text = bby.llm_gemini(chat_system_prompt, chat_user_prompt)
+        
+        return jsonify({
+            "success": True,
+            "response": response_text,
+            "patient_id": patient_id,
+            "model": "gemini-2.5-flash-lite via BBY Agent",
+            "disclaimer": "AI-generated response. Clinical judgment required."
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "error_type": "CHAT_ERROR"
+        }), 500
+
+
+# ============================================================================
 # MAIN
 # ============================================================================
 

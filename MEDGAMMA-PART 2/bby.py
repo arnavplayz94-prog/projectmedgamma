@@ -41,7 +41,7 @@ if GEMINI_AVAILABLE and GEMINI_API_KEY:
     try:
         genai.configure(api_key=GEMINI_API_KEY)
         gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
-        print("[OK] Gemini API initialized in bby.py")
+        print("[OK] Gemini API initialized in bby.py (using gemini-2.5-flash-lite)")
     except Exception as e:
         print(f"[ERROR] Failed to initialize Gemini: {e}")
         gemini_model = None
@@ -569,13 +569,9 @@ def llm_gemini(system_prompt: str, user_prompt: str) -> str:
         raise RuntimeError("Gemini API not configured. Set GEMINI_API_KEY environment variable.")
     
     try:
-        response = gemini_model.generate_content(
-            [system_prompt, user_prompt],
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.3,
-                max_output_tokens=1500,
-            )
-        )
+        # Combine prompts for simpler API call
+        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+        response = gemini_model.generate_content(full_prompt)
         return response.text
     except Exception as e:
         raise RuntimeError(f"Gemini API call failed: {str(e)}")

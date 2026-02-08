@@ -252,30 +252,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         const response = await fetch('http://127.0.0.1:5000/api/patients');
         if (response.ok) {
             const data = await response.json();
-            // Map backend data to frontend structure if necessary
-            AppState.patients = data.patients.map(p => ({
-                id: p.patient_id,
-                name: `${p.demographics.sex === 'Male' ? 'Mr.' : 'Ms.'} ${p.patient_id}`,
-                age: p.demographics.age,
-                gender: p.demographics.sex[0],
-                riskLevel: p.risk_assessment.level,
-                condition: 'Synthetic Monitoring',
-                notes: p.medical_history.join(', '),
-                lastUpdate: new Date(),
-                alertCount: p.risk_assessment.level === 'high' ? 1 : 0,
-                vitals: {
-                    hr: { value: p.vitals.heart_rate_avg, baseline: p.vitals.heart_rate_avg - 2, min: 60, max: 100 },
-                    bp: { systolic: parseInt(p.vitals.blood_pressure.split('/')[0]), diastolic: parseInt(p.vitals.blood_pressure.split('/')[1]), baseline: { s: 120, d: 80 } },
-                    spo2: { value: p.vitals.spo2_percent, baseline: 98, min: 94, max: 100 },
-                    temp: { value: p.vitals.body_temperature_c, baseline: 36.6, min: 36, max: 38 },
-                    resp: { value: p.vitals.respiratory_rate, baseline: 16, min: 12, max: 20 }
-                }
-            }));
+            console.log("Raw API Response:", data); // Debugging
+
+            // Map backend data to frontend structure with safety checks
+            AppState.patients = data.patients.map(p => {
+                // Determine gender safely
+                const sex = p.demographics?.sex || p.sex || 'Male';
+                const gender = sex[0]; // 'M' or 'F'
+                const name = `${sex === 'Male' ? 'Mr.' : 'Ms.'} ${p.patient_id}`;
+
+                // Determine age safely
+                const age = p.demographics?.age || p.age || 0;
+
+                // Determine risk level safely
+                const risk = p.risk_assessment?.level || 'low';
+
+                return {
+                    id: p.patient_id,
+                    name: name,
+                    age: age,
+                    gender: gender,
+                    riskLevel: risk,
+                    condition: 'Synthetic Monitoring',
+                    notes: (p.medical_history || []).join(', '),
+                    lastUpdate: new Date(),
+                    alertCount: risk === 'high' ? 1 : 0,
+                    vitals: {
+                        hr: { value: p.vitals?.heart_rate_avg || 70, baseline: (p.vitals?.heart_rate_avg || 72) - 2, min: 60, max: 100 },
+                        bp: {
+                            systolic: parseInt((p.vitals?.blood_pressure || "120/80").split('/')[0]),
+                            diastolic: parseInt((p.vitals?.blood_pressure || "120/80").split('/')[1]),
+                            baseline: { s: 120, d: 80 }
+                        },
+                        spo2: { value: p.vitals?.spo2_percent || 98, baseline: 98, min: 94, max: 100 },
+                        temp: { value: p.vitals?.body_temperature_c || 37, baseline: 36.6, min: 36, max: 38 },
+                        resp: { value: p.vitals?.respiratory_rate || 16, baseline: 16, min: 12, max: 20 }
+                    }
+                };
+            });
+            console.log("Mapped Patients:", AppState.patients); // Debugging
         } else {
+            console.warn("API returned error, falling back to samples");
             AppState.patients = DataGenerator.generateSamplePatients();
         }
     } catch (e) {
-        console.warn('Could not fetch patients, using samples:', e);
+        console.error('Could not fetch patients, using samples:', e);
         AppState.patients = DataGenerator.generateSamplePatients();
     }
 
@@ -876,7 +897,10 @@ function initializeAINotes() {
 }
 
 async function generateAINotes() {
+    console.log("=== generateAINotes called ===");
     const patient = AppState.selectedPatient;
+    console.log("Selected patient:", patient);
+
     if (!patient) {
         alert('Please select a patient first.');
         return;
@@ -893,6 +917,7 @@ async function generateAINotes() {
     }
 
     try {
+        console.log("Fetching from backend with patient_id:", patient.id);
         // Call backend API to generate AI clinical notes
         const response = await fetch('http://127.0.0.1:5000/api/generate-notes', {
             method: 'POST',
@@ -904,12 +929,16 @@ async function generateAINotes() {
             })
         });
 
+        console.log("Response status:", response.status, response.ok);
+
         if (!response.ok) {
             throw new Error('Failed to generate notes');
         }
 
         const data = await response.json();
+        console.log("Full API response:", data);
         const notes = data.notes;
+        console.log("Notes object:", notes);
 
         // Display the Advanced BBY Agent Note in the Summary and Impression tabs
         // And use the traditional SOAP note in the SOAP tab
@@ -965,24 +994,36 @@ async function generateAINotes() {
             `;
         }
 
+        console.log("DOM updates complete. Toggling visibility...");
+        console.log("generateContainer:", generateContainer);
+        console.log("noteContent:", noteContent);
+
         // Show notes content
         generateContainer?.classList.add('hidden');
         noteContent?.classList.remove('hidden');
+
+        console.log("Visibility toggled! noteContent.classList:", noteContent?.classList.toString());
+        console.log("=== SUCCESS: AI notes should now be visible! ===");
 
         AppState.stats.draftNotes++;
         updateStats();
 
     } catch (error) {
         console.error('Error generating AI notes:', error);
-        // Show error - backend is required, no local generation allowed
-        showToast('Unable to connect to AI backend. Please ensure the backend server is running.', 'error');
+        // Show error - could be quota limit or connection issue
+        showToast('Failed to generate notes. Check if API quota is exceeded.', 'error');
 
         document.getElementById('noteSubjective').innerHTML = `
             <div class="backend-error">
                 <span class="error-icon">⚠️</span>
-                <strong>Backend Connection Required</strong>
-                <p>AI clinical notes must be generated by the backend server.</p>
-                <p>Please start the backend: <code>python backend.py</code></p>
+                <strong>AI Generation Failed</strong>
+                <p>The AI could not generate notes. Possible causes:</p>
+                <ul style="text-align: left; margin: 10px 0;">
+                    <li>API quota exceeded (429 error) - wait a few minutes</li>
+                    <li>Backend server not running - run <code>python backend.py</code></li>
+                    <li>Network issue - check your connection</li>
+                </ul>
+                <p>Try again in a few minutes or check the browser console for details.</p>
             </div>
         `;
         document.getElementById('noteObjective').innerHTML = '--';
