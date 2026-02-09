@@ -40,8 +40,8 @@ gemini_model = None
 if GEMINI_AVAILABLE and GEMINI_API_KEY:
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
-        print("[OK] Gemini API initialized in bby.py (using gemini-2.5-flash)")
+        gemini_model = genai.GenerativeModel('gemini-3-flash')
+        print("[OK] Gemini API initialized in bby.py (using gemini-3-flash)")
     except Exception as e:
         print(f"[ERROR] Failed to initialize Gemini: {e}")
         gemini_model = None
