@@ -151,9 +151,9 @@ def get_session_context(patient_id: str) -> Dict[str, Any]:
 def health_check():
     """Health check with system status."""
     return jsonify({
-        "status": "ok" if gemini_model else "degraded",
+        "status": "ok" if bby.gemini_model else "degraded",
         "service": "MedGamma Backend (Synthetic Data)",
-        "gemini_available": gemini_model is not None,
+        "gemini_available": bby.gemini_model is not None,
         "patients_loaded": len(SYNTHETIC_PATIENTS),
         "patient_ids": get_patient_ids(),
         "timestamp": datetime.now().isoformat()
@@ -350,7 +350,7 @@ Include a disclaimer that this is AI-generated and requires clinical review.
             "label": "AI-Suggested (Review Required)",
             "editable": True,
             "rejectable": True,
-            "model": "gemini-3-flash via BBY Agent",
+            "model": "gemini-3-flash-preview via BBY Agent",
             "data_source": "synthetic_dataset",
             "traceable_fields": list(context.keys()),
             "generated_at": datetime.now().isoformat()
@@ -458,7 +458,7 @@ Be helpful, friendly, and flexible. You're a supportive colleague, not just a da
             "response": response,
             "type": "success",
             "patient_id": patient_id,
-            "model": "gemini-3-flash via BBY Agent",
+            "model": "gemini-3-flash-preview via BBY Agent",
             "data_source": "synthetic_dataset",
             "context_available": True,
             "timestamp": datetime.now().isoformat()
@@ -581,7 +581,7 @@ Respond naturally and helpfully. If it's a clinical question, use the patient da
             "success": True,
             "response": response_text,
             "patient_id": patient_id,
-            "model": "gemini-3-flash via BBY Agent",
+            "model": "gemini-3-flash-preview via BBY Agent",
             "disclaimer": "AI-generated response. Clinical judgment required."
         })
         
