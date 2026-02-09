@@ -1003,6 +1003,11 @@ async function generateAINotes() {
 
     try {
         console.log("Fetching from backend with patient_id:", patient.id);
+
+        // Add timeout to prevent hanging indefinitely
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+
         // Call backend API to generate AI clinical notes
         const response = await fetch('http://127.0.0.1:5000/api/generate-notes', {
             method: 'POST',
@@ -1011,8 +1016,11 @@ async function generateAINotes() {
             },
             body: JSON.stringify({
                 patient_id: patient.id
-            })
+            }),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         console.log("Response status:", response.status, response.ok);
 
@@ -1097,20 +1105,29 @@ async function generateAINotes() {
 
     } catch (error) {
         console.error('Error generating AI notes:', error);
-        // Show error - could be quota limit or connection issue
-        showToast('Failed to generate notes. Check if API quota is exceeded.', 'error');
+
+        // Detect if it was a timeout
+        const isTimeout = error.name === 'AbortError';
+        const errorMessage = isTimeout
+            ? 'Request timed out. The AI model is taking too long to respond.'
+            : 'Failed to generate notes. Check if backend is running.';
+
+        showToast(errorMessage, 'error');
 
         document.getElementById('noteSubjective').innerHTML = `
             <div class="backend-error">
                 <span class="error-icon">⚠️</span>
-                <strong>AI Generation Failed</strong>
-                <p>The AI could not generate notes. Possible causes:</p>
+                <strong>${isTimeout ? 'Request Timed Out' : 'AI Generation Failed'}</strong>
+                <p>${isTimeout
+                ? 'The AI model took too long to respond (>60 seconds). This can happen with complex requests or high API load.'
+                : 'The AI could not generate notes. Possible causes:'}</p>
                 <ul style="text-align: left; margin: 10px 0;">
+                    ${isTimeout ? '<li>High AI API load - try again in a moment</li>' : ''}
                     <li>API quota exceeded (429 error) - wait a few minutes</li>
                     <li>Backend server not running - run <code>python backend.py</code></li>
                     <li>Network issue - check your connection</li>
                 </ul>
-                <p>Try again in a few minutes or check the browser console for details.</p>
+                <p>Try again or check the browser console (F12) for details.</p>
             </div>
         `;
         document.getElementById('noteObjective').innerHTML = '--';
