@@ -380,6 +380,9 @@
                                     <button class="ai-action accept" id="acceptNoteBtn">
                                         <span class="icon">✓</span> Accept
                                     </button>
+                                    <button class="ai-action save" id="saveNoteBtn">
+                                        <span class="icon">💾</span> Save
+                                    </button>
                                     <button class="ai-action edit" id="editNoteBtn">
                                         <span class="icon">✏</span> Edit
                                     </button>
@@ -421,6 +424,25 @@
 
                             <div class="timeline-empty-state" id="timelineEmptyState">
                                 <p class="empty-text">No notes yet. Add your first note above.</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Saved Section (Requirement: New Tab/Section) -->
+                    <section class="card saved-card" data-component="saved">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <span class="card-icon">💾</span>
+                                Saved
+                            </h3>
+                            <button class="card-action-btn" id="clearSavedBtn">Clear All</button>
+                        </div>
+                        <div class="card-body">
+                            <ul class="alert-list" id="savedList">
+                                <!-- Saved items rendered by JS -->
+                            </ul>
+                            <div class="alerts-empty-state" id="savedEmptyState">
+                                <p class="empty-text">No saved items yet.</p>
                             </div>
                         </div>
                     </section>

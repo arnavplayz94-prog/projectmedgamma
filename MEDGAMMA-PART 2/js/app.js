@@ -25,7 +25,8 @@ const AppState = {
         pendingAlerts: 0,
         draftNotes: 0,
         reviewedToday: 0
-    }
+    },
+    savedItems: []
 };
 
 // Sample Data Generator
@@ -245,6 +246,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initializeSettings();
     initializeSearch();
     initializeModals();
+    initializeSavedSection();
     initializeChatbot();
 
     // Fetch real patients from the backend to ensure IDs match (P001, P002, P003)
@@ -312,7 +314,72 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (AppState.patients.length > 0) {
         selectPatient(AppState.patients[0]);
     }
+    // Start 5-minute live updates
+    startLiveUpdates();
 });
+
+// =====================================================
+// Live Updates
+// =====================================================
+function startLiveUpdates() {
+    // Update every 5 minutes (300,000 ms)
+    setInterval(() => {
+        console.log('Updating vital signs with new values...');
+
+        AppState.patients.forEach(patient => {
+            if (!patient.vitals) return;
+
+            // Update HR (-3 to +3 variation)
+            const hrInfo = patient.vitals.hr;
+            const hrVar = Math.floor(Math.random() * 7) - 3;
+            let newHr = hrInfo.value + hrVar;
+            patient.vitals.hr.value = Math.max(hrInfo.min - 5, Math.min(hrInfo.max + 5, newHr));
+
+            // Update BP Systolic (-3 to +3)
+            const bpInfo = patient.vitals.bp;
+            const bpVar = Math.floor(Math.random() * 7) - 3;
+            let newSys = bpInfo.systolic + bpVar;
+            patient.vitals.bp.systolic = Math.max(90, Math.min(180, newSys));
+
+            // Update BP Diastolic (follows systolic vaguely)
+            let newDia = Math.floor(newSys * 0.65) + (Math.floor(Math.random() * 5) - 2);
+            patient.vitals.bp.diastolic = Math.max(50, Math.min(110, newDia));
+
+            // Update SpO2 (mostly stable, -1 to +1)
+            const spo2Info = patient.vitals.spo2;
+            if (spo2Info.value >= 99) {
+                patient.vitals.spo2.value = Math.random() > 0.7 ? 98 : 99;
+            } else {
+                const spo2Var = Math.random() > 0.8 ? -1 : (Math.random() > 0.5 ? 1 : 0);
+                let newSpo2 = spo2Info.value + spo2Var;
+                patient.vitals.spo2.value = Math.max(spo2Info.min - 2, Math.min(100, newSpo2));
+            }
+
+            // Update Temp (-0.1 to +0.1)
+            const tempInfo = patient.vitals.temp;
+            const tempVar = (Math.random() * 0.2) - 0.1;
+            let newTemp = parseFloat((tempInfo.value + tempVar).toFixed(1));
+            patient.vitals.temp.value = Math.max(97, Math.min(101, newTemp));
+
+            // Update Resp (-1 to +1)
+            const respInfo = patient.vitals.resp;
+            const respVar = Math.floor(Math.random() * 3) - 1;
+            let newResp = respInfo.value + respVar;
+            patient.vitals.resp.value = Math.max(12, Math.min(24, newResp));
+
+            // Update timestamp
+            patient.lastUpdate = new Date();
+        });
+
+        // Re-render UI
+        renderPatientList();
+        if (AppState.selectedPatient) {
+            renderVitals(AppState.selectedPatient);
+            initializeVitalTrendChart(AppState.selectedPatient);
+        }
+
+    }, 300000); // 300,000 ms = 5 minutes
+}
 
 // =====================================================
 // Sidebar
@@ -884,7 +951,25 @@ function initializeAINotes() {
     acceptBtn?.addEventListener('click', acceptNote);
     editBtn?.addEventListener('click', toggleEditMode);
     rejectBtn?.addEventListener('click', rejectNote);
+    rejectBtn?.addEventListener('click', rejectNote);
     regenerateBtn?.addEventListener('click', generateAINotes);
+
+    // Save button listener
+    const saveBtn = document.getElementById('saveNoteBtn');
+    saveBtn?.addEventListener('click', () => {
+        // Get content from visible tab
+        const visibleContent = document.querySelector('.note-section:not(.hidden) .note-text');
+        if (visibleContent) {
+            saveToSaved(visibleContent.textContent, 'Clinical Note', 'AI Assistant');
+        } else {
+            // Fallback if multiple sections visible (e.g. SOAP)
+            // Just capture all text
+            const allText = Array.from(document.querySelectorAll('.note-section:not(.hidden)'))
+                .map(sec => sec.innerText)
+                .join('\n\n');
+            saveToSaved(allText, 'Clinical Global Note', 'AI Assistant');
+        }
+    });
 
     noteTabs.forEach(tab => {
         tab.addEventListener('click', () => {
@@ -1533,6 +1618,159 @@ function saveNewPatient() {
 }
 
 // =====================================================
+// Saved Section (Requirement: New Tab/Section)
+// =====================================================
+function initializeSavedSection() {
+    const clearBtn = document.getElementById('clearSavedBtn');
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            if (confirm('Clear all saved items?')) {
+                AppState.savedItems = [];
+                renderSavedList();
+                showToast('All saved items cleared.');
+            }
+        });
+    }
+
+    // Initial render
+    renderSavedList();
+}
+
+function saveToSaved(content, type, source) {
+    const item = {
+        id: `saved-${Date.now()}`,
+        content: content,
+        type: type,
+        source: source,
+        timestamp: new Date()
+    };
+
+    AppState.savedItems.unshift(item);
+    renderSavedList();
+    showToast('Saved to Saved section.');
+
+    // Animate the saved card to draw attention
+    const savedCard = document.querySelector('.saved-card');
+    if (savedCard) {
+        savedCard.style.animation = 'none';
+        savedCard.offsetHeight; // Trigger reflow
+        savedCard.style.animation = 'pulse-card 0.5s ease';
+    }
+}
+
+function renderSavedList() {
+    const list = document.getElementById('savedList');
+    const emptyState = document.getElementById('savedEmptyState');
+
+    if (!list) return;
+
+    list.innerHTML = '';
+
+    if (AppState.savedItems.length === 0) {
+        emptyState?.classList.remove('hidden');
+        return;
+    }
+
+    emptyState?.classList.add('hidden');
+
+    AppState.savedItems.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'alert-item';
+        li.style.borderLeftColor = 'var(--color-primary)';
+
+        // Header
+        const header = document.createElement('div');
+        header.className = 'alert-header';
+        header.innerHTML = `
+            <span class="alert-type" style="color: var(--color-primary)">${item.source.toUpperCase()}</span>
+            <span class="alert-time">${formatTimeAgo(item.timestamp)}</span>
+        `;
+
+        // Message
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'alert-message';
+        messageDiv.style.whiteSpace = 'pre-wrap';
+        messageDiv.style.maxHeight = '100px';
+        messageDiv.style.overflowY = 'auto';
+
+        const typeStrong = document.createElement('strong');
+        typeStrong.textContent = item.type;
+
+        const br = document.createElement('br');
+
+        const contentText = document.createTextNode(
+            item.content.substring(0, 150) + (item.content.length > 150 ? '...' : '')
+        );
+
+        messageDiv.appendChild(typeStrong);
+        messageDiv.appendChild(br);
+        messageDiv.appendChild(contentText);
+
+        // Actions
+        const actions = document.createElement('div');
+        actions.className = 'alert-action-bar';
+
+        const viewBtn = document.createElement('button');
+        viewBtn.className = 'alert-action secondary';
+        viewBtn.textContent = 'View Full';
+        viewBtn.onclick = () => {
+            alert(item.content);
+        };
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'alert-action secondary';
+        deleteBtn.style.color = '#ef4444';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.onclick = () => deleteSavedItem(item.id);
+
+        actions.appendChild(viewBtn);
+        actions.appendChild(deleteBtn);
+
+        li.appendChild(header);
+        li.appendChild(messageDiv);
+        li.appendChild(actions);
+
+        list.appendChild(li);
+    });
+}
+
+function deleteSavedItem(id) {
+    AppState.savedItems = AppState.savedItems.filter(i => i.id !== id);
+    renderSavedList();
+}
+
+// Add pulse animation style
+const styleSheet = document.createElement("style");
+styleSheet.innerText = `
+@keyframes pulse-card {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); }
+    50% { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(37, 99, 235, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+}
+.chat-action-save {
+    margin-top: 8px;
+    font-size: 0.7rem;
+    padding: 4px 8px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+}
+.chat-action-save:hover {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+}
+`;
+document.head.appendChild(styleSheet);
+
+
+// =====================================================
 // Stats
 // =====================================================
 function updateStats() {
@@ -1717,6 +1955,15 @@ function addChatMessage(type, content) {
 
     // Scroll to bottom
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    // Add Save button for assistant messages
+    if (type === 'assistant') {
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'chat-action-save';
+        saveBtn.innerHTML = '💾 Save to Saved';
+        saveBtn.onclick = () => saveToSaved(content, 'Chat Response', 'AI Chat');
+        messageDiv.querySelector('.message-content').appendChild(saveBtn);
+    }
 }
 
 function formatChatContent(content) {
