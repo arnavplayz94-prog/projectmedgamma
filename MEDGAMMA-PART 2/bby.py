@@ -40,8 +40,8 @@ gemini_model = None
 if GEMINI_AVAILABLE and GEMINI_API_KEY:
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
-        print("[OK] Gemini API initialized in bby.py (using gemini-2.5-flash-lite)")
+        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+        print("[OK] Gemini API initialized in bby.py (using gemini-2.5-flash)")
     except Exception as e:
         print(f"[ERROR] Failed to initialize Gemini: {e}")
         gemini_model = None
@@ -550,11 +550,16 @@ USER_TEMPLATE = (
     "Patient context (synthetic): {patient_context}\n\n"
     "Structured recovery summary (JSON):\n{summary_json}\n\n"
     "Write output strictly in this format:\n\n"
-    "1) Clinical summary (max 5 bullet points)\n"
-    "2) Risk level: low/medium/high + rationale (1-2 sentences)\n"
-    "3) Questions to ask (max 5 bullets)\n"
-    "4) Suggested next step (non-diagnostic, 1-2 bullets)\n"
-    "5) Safety note / when to escalate (1-2 bullets)\n"
+    "1) Patient Summary\n"
+    "   Definition: A high-level overview intended for rapid clinical review. Summarizes: Overall patient status, Key trends, Risk level. Written so a doctor can understand the case in seconds.\n"
+    "   Constraint: Max 3 short bullet points. Do NOT repeat details from other sections.\n"
+    "2) Clinical Impression\n"
+    "   Definition: A non-binding, suggestive medical opinion describing the most likely explanation for observed patterns. Must be clearly suggestive, not definitive. Doctor can accept or reject. Must never replace clinician judgment.\n"
+    "   Constraint: Max 1 sentence. Do NOT repeat Assessment reasoning or SOAP details.\n"
+    "3) Questions to ask (max 3 bullets)\n"
+    "4) Suggested next step (non-diagnostic, 1 bullet)\n"
+    "5) Safety note / when to escalate (1 bullet)\n"
+    "CONSTRAINT: Be extremely concise. No filler. No overlap between sections."
 )
 
 def build_patient_context_bby(entity_id: str) -> str:

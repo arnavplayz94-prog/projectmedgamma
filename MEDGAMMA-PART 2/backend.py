@@ -11,6 +11,7 @@ NO mock, fallback, or hallucinated data is permitted.
 import os
 import json
 import traceback
+import re
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from flask import Flask, jsonify, request
@@ -76,7 +77,49 @@ def call_gemini(system_prompt: str, user_prompt: str) -> str:
         )
         return response.text
     except Exception as e:
+        return response.text
+    except Exception as e:
         raise RuntimeError(f"Gemini API call failed: {str(e)}")
+
+
+def extract_section(text: str, section_name: str, next_section_name: str = None) -> str:
+    """
+    Extract a specific section from the text based on standard headers.
+    """
+    try:
+        # Find start of section (flexible matching for numbering 1) or 1.)
+        pattern = r"(?:\d+[\)\.]\s*)?" + re.escape(section_name)
+        match = re.search(pattern, text, re.IGNORECASE)
+        if not match:
+            return ""
+        
+        # Advance to the next line to skip any header instructions like "(max 3 bullets)"
+        start_idx = match.end()
+        rest_of_line_match = re.search(r'[^\n]*\n', text[start_idx:])
+        if rest_of_line_match:
+            start_idx += rest_of_line_match.end()
+        
+        remainder = text[start_idx:]
+        
+        # If there's a next section, find it to terminate
+        end_idx = len(remainder)
+        if next_section_name:
+            next_pattern = r"(?:\d+[\)\.]\s*)?" + re.escape(next_section_name)
+            next_match = re.search(next_pattern, remainder, re.IGNORECASE)
+            if next_match:
+                end_idx = next_match.start()
+        
+        # Clean up key definitions/constraints if they leaked into the output
+        content = remainder[:end_idx].strip()
+        
+        # Remove "Definition:" and "Constraint:" lines if the model repeated them
+        lines = content.split('\n')
+        clean_lines = [l for l in lines if not l.strip().startswith(("Definition:", "Constraint:"))]
+        content = '\n'.join(clean_lines).strip()
+        
+        return content
+    except Exception:
+        return ""
 
 
 # ============================================================================
@@ -232,11 +275,25 @@ Do NOT invent any information not present in the data.
 
 {summary_text}
 
-Generate a SOAP note with these sections:
-1. SUBJECTIVE: Patient-reported symptoms and history
-2. OBJECTIVE: Vitals, measurements, wearable data
-3. ASSESSMENT: Clinical impression based ONLY on the data (use probabilistic language)
+Generate a SOAP note following these STRICT definitions and constraints:
+
+CONSTRAINT: NO OVERLAP. Information in one section must NOT appear in another.
+CONSTRAINT: EXTREME BREVITY. Omit filler words. Use short, telegraphic sentences.
+
+SOAP Notes (overall structure): A standardized clinical documentation format used by physicians. It organizes information clearly and consistently for medical review.
+
+1. SUBJECTIVE:
+   - Include HPI defined as: A concise narrative describing recent changes in the patient’s condition. Focuses on: Recent timeline, Symptom evolution, Changes observed over hours/days, Trends derived from wearable data. Answers: “What has been happening recently with this patient?”
+   - Constraint: Max 3 short sentences. DO NOT include assessment or interpretation.
+
+2. OBJECTIVE: Vitals, measurements, wearable data (Raw data only. No commentary.)
+
+3. ASSESSMENT:
+   - Definition: A clinical interpretation of objective wearable data. Synthesizes trends and deviations, Interprets physiological patterns, Explains what the data likely indicates clinically. (Not a diagnosis, only professional reasoning).
+   - Constraint: Max 3 bullet points. DO NOT repeat Subjective/HPI narrative.
+
 4. PLAN: Suggested considerations (NOT prescriptions)
+   - Constraint: Max 2 bullet points.
 
 Include a disclaimer that this is AI-generated and requires clinical review.
 """
@@ -251,6 +308,26 @@ Include a disclaimer that this is AI-generated and requires clinical review.
             "impression": clinical_note
         }
         
+        # Parse the 5-point BBY note to strictly isolate sections
+        p_summary = extract_section(clinical_note, "Patient Summary", "Clinical Impression")
+        c_impression = extract_section(clinical_note, "Clinical Impression", "Questions to ask")
+        
+        # Extract Plan components
+        next_steps = extract_section(clinical_note, "Suggested next step", "Safety note")
+        safety = extract_section(clinical_note, "Safety note")
+        
+        # Construct Plan content
+        plan_content = ""
+        if next_steps:
+            plan_content += f"Next Steps:\n{next_steps}\n\n"
+        if safety:
+            plan_content += f"Safety:\n{safety}"
+        
+        # Fallback if parsing fails (though regex should handle it)
+        if not p_summary: p_summary = clinical_note
+        if not c_impression: c_impression = clinical_note
+        if not plan_content.strip(): plan_content = "See clinical summary."
+
         return jsonify({
             "success": True,
             "patient_id": patient_id,
@@ -260,8 +337,9 @@ Include a disclaimer that this is AI-generated and requires clinical review.
                     "subjective_data": subjective,
                     "objective_data": objective
                 },
-                "patient_summary": clinical_note,  # BBY agent's advanced 5-point format
-                "clinical_impression": clinical_note
+                "patient_summary": p_summary,
+                "clinical_impression": c_impression,
+                "plan": plan_content.strip()
             },
             "bby_agent": {
                 "format": "5-point clinical note",
@@ -272,7 +350,7 @@ Include a disclaimer that this is AI-generated and requires clinical review.
             "label": "AI-Suggested (Review Required)",
             "editable": True,
             "rejectable": True,
-            "model": "gemini-2.5-flash-lite via BBY Agent",
+            "model": "gemini-2.5-flash via BBY Agent",
             "data_source": "synthetic_dataset",
             "traceable_fields": list(context.keys()),
             "generated_at": datetime.now().isoformat()
@@ -377,7 +455,7 @@ INSTRUCTIONS:
             "response": response,
             "type": "success",
             "patient_id": patient_id,
-            "model": "gemini-2.5-flash-lite via BBY Agent",
+            "model": "gemini-2.5-flash via BBY Agent",
             "data_source": "synthetic_dataset",
             "context_available": True,
             "timestamp": datetime.now().isoformat()
@@ -442,23 +520,37 @@ Current Patient Context (Patient {patient_id}):
 - Risk Level: {context['risk_assessment']['level']}
 """
         
-        # Create clinical chat prompt
-        chat_system_prompt = """You are a clinical AI assistant for healthcare professionals.
-        
-MANDATORY RULES:
-1. Use ONLY the patient data provided - do NOT invent information
-2. Do NOT provide definitive diagnoses
-3. Do NOT prescribe treatments - suggest clinical considerations only
-4. Be uncertainty-aware and always recommend physician review
-5. Keep responses concise and clinically relevant
+        # Create clinical chat prompt - conversational and adaptive
+        chat_system_prompt = """You are a friendly AI companion and clinical assistant for doctors.
 
-Always end with a disclaimer that this is AI-generated and requires clinical judgment."""
+YOUR PERSONALITY:
+- Be warm, natural, and conversational - NOT robotic or overly formal
+- If the doctor says "hi" or "hello", respond naturally with a friendly greeting
+- If they ask for a joke, tell a light-hearted (appropriate) joke
+- If they want to chat casually, engage like a supportive colleague
+- You can be a listening ear - doctors have stressful jobs!
+
+ADAPT TO WHAT THE DOCTOR ASKS:
+- "Give me a quick summary" → Short, concise response (2-3 sentences)
+- "Explain more" or "expand on that" → Detailed explanation
+- "What do you think?" → Share clinical considerations conversationally
+- Casual chat → Respond casually, be a good companion
+- Clinical question → Provide helpful clinical insights
+
+CLINICAL RULES (when discussing patients):
+1. Use ONLY the patient data provided - never invent information
+2. Do NOT provide definitive diagnoses
+3. Suggest clinical considerations, not prescriptions
+4. Be honest about uncertainty
+5. For clinical matters, briefly note that physician judgment is needed
+
+Remember: You're here to HELP the doctor, not lecture them. Listen to what they actually want and respond accordingly."""
 
         chat_user_prompt = f"""{context_text}
 
-Doctor's Question: {user_message}
+Doctor says: {user_message}
 
-Provide a helpful, clinically-informed response based on the available patient data. If no patient is selected, provide general clinical guidance."""
+Respond naturally based on what the doctor is asking. Match your tone and length to their request."""
 
         # Call BBY Agent's Gemini function
         response_text = bby.llm_gemini(chat_system_prompt, chat_user_prompt)
@@ -467,7 +559,7 @@ Provide a helpful, clinically-informed response based on the available patient d
             "success": True,
             "response": response_text,
             "patient_id": patient_id,
-            "model": "gemini-2.5-flash-lite via BBY Agent",
+            "model": "gemini-2.5-flash via BBY Agent",
             "disclaimer": "AI-generated response. Clinical judgment required."
         })
         

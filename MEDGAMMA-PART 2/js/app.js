@@ -961,6 +961,8 @@ async function generateAINotes() {
             <div style="white-space: pre-wrap; margin-top: 10px;">${notes.clinical_impression}</div>
         `;
         document.getElementById('notePlan').innerHTML = `
+            <span class="ai-label">Suggested Plan</span>
+            <div style="white-space: pre-wrap; margin-top: 10px;">${notes.plan || ''}</div>
             <div class="ai-disclaimer">${data.disclaimer}</div>
         `;
 
